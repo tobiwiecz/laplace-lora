@@ -6,12 +6,11 @@ seeds=(21 42 87)
 
 tasks=(${TASKS:-winogrande_s})
 
-model=meta-llama/Llama-2-7b-chat-hf
+model=TinyLlama/TinyLlama-1.1B-Chat-v1.0
 
 train_bs=4
 eval_bs=4
 max_len=300
-num_gpus=$(nvidia-smi --list-gpus | wc -l)
 
 for task in "${tasks[@]}"; do
     for seed in "${seeds[@]}"; do
@@ -21,7 +20,7 @@ for task in "${tasks[@]}"; do
         log_file="${log_dir}/seed${seed}_bs${train_bs}_maxlen${max_len}.log"
 
         echo "Running $model on task $task with seed $seed"
-        accelerate launch --num_processes $num_gpus run_gpt.py \
+        accelerate launch --num_processes 1 run_gpt.py \
             --model_name_or_path $model \
             --task_name $task \
             --seed $seed \

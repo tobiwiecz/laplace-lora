@@ -23,6 +23,17 @@ from torch.nn.utils import parameters_to_vector, vector_to_parameters
 from asdl.core import extend
 from asdl.operations import OP_BATCH_GRADS
 import asdl
+import asdl.operations.linear as _asdl_linear
+
+# asdl's batch_grads_weight uses torch.bmm which requires matching dtypes.
+# Models loaded with bitsandbytes float16 produce float16 activations, causing
+# a Float vs Half mismatch. Cast both tensors to float32 before the bmm.
+@staticmethod
+def _batch_grads_weight_fp32(module, in_data, out_grads):
+    return torch.bmm(out_grads.float().unsqueeze(2), in_data.float().unsqueeze(1))
+
+_asdl_linear.Linear.batch_grads_weight = _batch_grads_weight_fp32
+
 
 def batch_gradient(model, closure, input_shape,return_outputs=False):
     with extend(model, OP_BATCH_GRADS) as cxt:

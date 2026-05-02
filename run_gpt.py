@@ -1,5 +1,3 @@
-import os
-
 import argparse
 import json
 import logging
@@ -8,6 +6,8 @@ import os
 import random
 from pathlib import Path
 
+from metrics import compute_all_metrics
+
 import datasets
 import evaluate
 import torch
@@ -15,7 +15,7 @@ from accelerate import Accelerator
 from accelerate.logging import get_logger
 from accelerate.utils import set_seed
 from datasets import load_dataset
-from huggingface_hub import Repository, create_repo
+from huggingface_hub import create_repo
 from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
 import copy
@@ -25,6 +25,7 @@ from transformers import (
     AutoConfig,
     AutoModelForCausalLM,
     AutoTokenizer,
+    BitsAndBytesConfig,
     DataCollatorWithPadding,
     PretrainedConfig,
     SchedulerType,
@@ -32,7 +33,7 @@ from transformers import (
     get_scheduler,
     LlamaForCausalLM, LlamaTokenizer
 )
-from transformers.utils import check_min_version, get_full_repo_name, send_example_telemetry
+from transformers.utils import check_min_version
 from transformers.utils.versions import require_version
 
 from peft import (
@@ -40,6 +41,7 @@ from peft import (
     get_peft_model,
     get_peft_model_state_dict,
     set_peft_model_state_dict,
+    prepare_model_for_kbit_training,
     LoraConfig,
     PeftType,
     PrefixTuningConfig,
@@ -220,10 +222,6 @@ def parse_args():
 
 def main():
     args = parse_args()
-    # Sending telemetry. Tracking the example usage helps us better allocate resources to maintain them. The
-    # information sent is the one passed as arguments along with your Python/PyTorch versions.
-    send_example_telemetry("run_glue_no_trainer", args)
-
     # Initialize the accelerator. We will let the accelerator handle device placement for us in this example.
     # If we're using tracking, we also need to initialize it here and it will by default pick up all supported trackers
     # in the environment
@@ -252,11 +250,10 @@ def main():
     if accelerator.is_main_process:
         if args.push_to_hub:
             if args.hub_model_id is None:
-                repo_name = get_full_repo_name(Path(args.output_dir).name, token=args.hub_token)
+                repo_name = Path(args.output_dir).name
             else:
                 repo_name = args.hub_model_id
             create_repo(repo_name, exist_ok=True, token=args.hub_token)
-            repo = Repository(args.output_dir, clone_from=repo_name, token=args.hub_token)
 
             with open(os.path.join(args.output_dir, ".gitignore"), "w+") as gitignore:
                 if "step_*" not in gitignore:
@@ -406,17 +403,19 @@ def main():
     #
     # In distributed training, the .from_pretrained methods guarantee that only one local process can concurrently
     # download model & vocab.
-    tokenizer = AutoTokenizer.from_pretrained(args.model_name_or_path, use_fast=not args.use_slow_tokenizer, padding_side='left', use_auth_token='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')
+    tokenizer = AutoTokenizer.from_pretrained(args.model_name_or_path, use_fast=not args.use_slow_tokenizer, padding_side='left', token=True)
     tokenizer.pad_token = tokenizer.bos_token
     if args.task_name in ['boolq']:  #,'winogrande_m', 'winogrande_s']:
         tokenizer.add_eos_token = True
     
     model = AutoModelForCausalLM.from_pretrained(
-        args.model_name_or_path, load_in_8bit=True
+        args.model_name_or_path,
+        quantization_config=BitsAndBytesConfig(load_in_8bit=True),
+        torch_dtype=torch.float16,
+        token=True,
     )
+    model = prepare_model_for_kbit_training(model)
 
-
-    
     target_modules=['v_proj','q_proj']
     if args.lm_head:
         target_modules.append('lm_head')
@@ -487,7 +486,7 @@ def main():
         # Otherwise, `DataCollatorWithPadding` will apply dynamic padding for us (by padding to the maximum length of
         # the samples passed). When using mixed precision, we add `pad_to_multiple_of=8` to pad all tensors to multiple
         # of 8s, which will enable the use of Tensor Cores on NVIDIA hardware with compute capability >= 7.5 (Volta).
-        data_collator = DataCollatorWithPadding(tokenizer, pad_to_multiple_of=(8 if accelerator.use_fp16 else None))
+        data_collator = DataCollatorWithPadding(tokenizer, pad_to_multiple_of=(8 if (accelerator.mixed_precision == "fp16") else None))
 
     train_dataloader = DataLoader(
         train_dataset, shuffle=True, collate_fn=data_collator, batch_size=args.per_device_train_batch_size
@@ -517,13 +516,13 @@ def main():
             super().__init__()
 
             if args.task_name == 'boolq':
-                self.id_list = [tokenizer.encode('False')[1], tokenizer.encode('True')[1]]
+                self.id_list = [tokenizer.encode('False', add_special_tokens=False)[0], tokenizer.encode('True', add_special_tokens=False)[0]]
             elif args.task_name == 'openbookqa':
-                self.id_list = [tokenizer.encode('A')[1], tokenizer.encode('B')[1], tokenizer.encode('C')[1], tokenizer.encode('D')[1]]
+                self.id_list = [tokenizer.encode('A', add_special_tokens=False)[0], tokenizer.encode('B', add_special_tokens=False)[0], tokenizer.encode('C', add_special_tokens=False)[0], tokenizer.encode('D', add_special_tokens=False)[0]]
             elif 'ARC' in args.task_name:
-                self.id_list = [tokenizer.encode('A')[1], tokenizer.encode('B')[1], tokenizer.encode('C')[1], tokenizer.encode('D')[1]]
+                self.id_list = [tokenizer.encode('A', add_special_tokens=False)[0], tokenizer.encode('B', add_special_tokens=False)[0], tokenizer.encode('C', add_special_tokens=False)[0], tokenizer.encode('D', add_special_tokens=False)[0]]
             elif 'winogrande' in args.task_name:
-                self.id_list = [tokenizer.encode('A')[1], tokenizer.encode('B')[1]]
+                self.id_list = [tokenizer.encode('A', add_special_tokens=False)[0], tokenizer.encode('B', add_special_tokens=False)[0]]
 
             self.model = model
 
@@ -584,13 +583,14 @@ def main():
         accelerator.init_trackers("glue_no_trainer", experiment_config)
 
     # Get the metric function
+    _exp_id = args.output_dir.replace('/', '_').replace('.', '').strip('_')
     if args.task_name is not None:
         if args.task_name in ['wnli', 'rte', 'mrpc', 'cola', 'sst2', 'qnli', 'qqp', 'mnli']:
-            metric = evaluate.load("glue", args.task_name, experiment_id=f"{args.output_dir}")
+            metric = evaluate.load("glue", args.task_name, experiment_id=_exp_id)
         elif args.task_name in ['cb', 'wic', 'boolq']:
-            metric = evaluate.load("super_glue", args.task_name, experiment_id=f"{args.output_dir}")
+            metric = evaluate.load("super_glue", args.task_name, experiment_id=_exp_id)
         else:
-            metric = evaluate.load('accuracy', experiment_id=f"{args.output_dir}")
+            metric = evaluate.load('accuracy', experiment_id=_exp_id)
     else:
         metric = evaluate.load("accuracy")
 
@@ -656,34 +656,27 @@ def main():
 
                         model.eval()
                         samples_seen = 0
-                        output_dicts = []
+                        all_logits = []
+                        all_labels = []
                         for step, batch in tqdm(enumerate(test_loader)):
                             with torch.no_grad():
                                 outputs = model(**batch)
-                            predictions = outputs.logits.argmax(dim=-1) #if not is_regression else outputs.logits.squeeze()
-
+                            predictions = outputs.logits.argmax(dim=-1)
                             logits = outputs.logits.detach()
-                            for j in range(logits.size(0)):
-                                probs = logits[j]  #F.softmax(logits[j], -1)
-                                label = batch["labels"]
-                                output_dict = {
-                                    'index': args.per_device_eval_batch_size * step + j,
-                                    'true': label[j].item(),
-                                    'pred': logits[j].argmax().item(),
-                                    'conf': probs.max().item(),
-                                    'logits': logits[j].cpu().numpy().tolist(),
-                                    'probs': probs.cpu().numpy().tolist(),
-                                }
-                                output_dicts.append(output_dict)
 
-                            predictions, references = accelerator.gather((predictions, batch["labels"]))
-                            # If we are in a multiprocess environment, the last batch has duplicates
+                            predictions, references, logits = accelerator.gather(
+                                (predictions, batch["labels"], logits)
+                            )
                             if accelerator.num_processes > 1:
-                                if step == len(eval_dataloader) - 1:
-                                    predictions = predictions[: len(eval_dataloader.dataset) - samples_seen]
-                                    references = references[: len(eval_dataloader.dataset) - samples_seen]
+                                if step == len(test_loader) - 1:
+                                    n_keep = len(test_loader.dataset) - samples_seen
+                                    predictions = predictions[:n_keep]
+                                    references = references[:n_keep]
+                                    logits = logits[:n_keep]
                                 else:
                                     samples_seen += references.shape[0]
+                            all_logits.append(logits.cpu())
+                            all_labels.append(references.cpu())
                             metric.add_batch(
                                 predictions=predictions,
                                 references=references,
@@ -694,13 +687,11 @@ def main():
 
                         if test_loader_name == 'eval':
                             accelerator.wait_for_everyone()
-                            # unwrapped_model = accelerator.unwrap_model(model).model
                             accelerator.unwrap_model(model).model.save_pretrained(
                                 output_dir, is_main_process=accelerator.is_main_process, save_function=accelerator.save
                             )
                             if accelerator.is_main_process:
                                 tokenizer.save_pretrained(output_dir)
-                            
 
                         all_results = {f"eval_{k}": v for k, v in eval_metric.items()}
 
@@ -714,22 +705,41 @@ def main():
                         with open(all_results_output_path, "w") as f:
                             json.dump(all_results, f)
 
-                        if test_loader_name == 'val':
-                            output_path = os.path.join(output_dir, f'eval_res_val.json')
-                        else:
-                            output_path = os.path.join(output_dir, f'eval_res.json')
-                        print(f'writing outputs to \'{output_path}\'')
+                        if accelerator.is_main_process:
+                            all_logits_cat = torch.cat(all_logits, dim=0)
+                            all_labels_cat = torch.cat(all_labels, dim=0)
+                            all_probs_cat = torch.softmax(all_logits_cat, dim=-1)
+                            output_dicts = [
+                                {
+                                    'index': j,
+                                    'true': all_labels_cat[j].item(),
+                                    'pred': all_logits_cat[j].argmax().item(),
+                                    'conf': all_probs_cat[j].max().item(),
+                                    'logits': all_logits_cat[j].numpy().tolist(),
+                                    'probs': all_probs_cat[j].numpy().tolist(),
+                                }
+                                for j in range(all_logits_cat.size(0))
+                            ]
 
-                        if os.path.isfile(output_path):
-                            os.remove(output_path)
+                            extra_metrics = compute_all_metrics(all_probs_cat, all_labels_cat)
+                            all_results.update({f"eval_{k}": v for k, v in extra_metrics.items()})
+                            with open(all_results_output_path, "w") as f:
+                                json.dump(all_results, f)
 
-                        with open(output_path, 'w+') as f:
-                            for i, output_dict in enumerate(output_dicts):
-                                output_dict_str = json.dumps(output_dict)
-                                f.write(f'{output_dict_str}\n')
+                            if test_loader_name == 'val':
+                                output_path = os.path.join(output_dir, f'eval_res_val.json')
+                            else:
+                                output_path = os.path.join(output_dir, f'eval_res.json')
+                            print(f'writing outputs to \'{output_path}\'')
 
+                            if os.path.isfile(output_path):
+                                os.remove(output_path)
 
-                        del output_dicts, all_results, output_dict, eval_metric, logits, probs, label, predictions, references, outputs
+                            with open(output_path, 'w+') as f:
+                                for output_dict in output_dicts:
+                                    f.write(f'{json.dumps(output_dict)}\n')
+
+                        del all_results, eval_metric, all_logits, all_labels, predictions, references, outputs
         
             if completed_steps > args.max_train_steps:
                 break

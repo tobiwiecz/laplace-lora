@@ -4,7 +4,12 @@ import logging
 import math
 import os
 import random
+import warnings
 from pathlib import Path
+
+from metrics import compute_all_metrics
+
+warnings.filterwarnings("ignore", category=FutureWarning, module="torch.nn.modules.module")
 
 import datasets
 import evaluate
@@ -13,7 +18,7 @@ from accelerate import Accelerator
 from accelerate.logging import get_logger
 from accelerate.utils import set_seed
 from datasets import load_dataset
-from huggingface_hub import Repository, create_repo
+from huggingface_hub import create_repo
 from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
 
@@ -22,6 +27,7 @@ from transformers import (
     AutoConfig,
     AutoModelForCausalLM,
     AutoTokenizer,
+    BitsAndBytesConfig,
     DataCollatorWithPadding,
     PretrainedConfig,
     SchedulerType,
@@ -30,7 +36,7 @@ from transformers import (
     LlamaForCausalLM, LlamaTokenizer
 )
 
-from transformers.utils import check_min_version, get_full_repo_name, send_example_telemetry
+from transformers.utils import check_min_version
 from transformers.utils.versions import require_version
 
 from peft import (
@@ -38,6 +44,7 @@ from peft import (
     get_peft_model,
     get_peft_model_state_dict,
     set_peft_model_state_dict,
+    prepare_model_for_kbit_training,
     LoraConfig,
     PeftType,
     PrefixTuningConfig,
@@ -223,10 +230,6 @@ def parse_args():
 def main(load_step):
     args = parse_args()
     args.load_step = load_step
-    # Sending telemetry. Tracking the example usage helps us better allocate resources to maintain them. The
-    # information sent is the one passed as arguments along with your Python/PyTorch versions.
-    send_example_telemetry("run_glue_no_trainer", args)
-
     laplace_output_dir = args.laplace_output_dir + f'step_{args.load_step}'
     os.makedirs(laplace_output_dir, exist_ok=True)
 
@@ -386,7 +389,7 @@ def main(load_step):
     #
     # In distributed training, the .from_pretrained methods guarantee that only one local process can concurrently
     # download model & vocab.
-    tokenizer = AutoTokenizer.from_pretrained(args.model_name_or_path, use_fast=not args.use_slow_tokenizer, padding_side='left', use_auth_token='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')
+    tokenizer = AutoTokenizer.from_pretrained(args.model_name_or_path, use_fast=not args.use_slow_tokenizer, padding_side='left', token=True)
     tokenizer.pad_token = tokenizer.bos_token
     if args.task_name in ['boolq']: #,'winogrande_m', 'winogrande_s']:
         tokenizer.add_eos_token = True
@@ -397,8 +400,12 @@ def main(load_step):
 
     peft_config = PeftConfig.from_pretrained(output_dir)
     model = AutoModelForCausalLM.from_pretrained(
-        peft_config.base_model_name_or_path, load_in_8bit=True
+        peft_config.base_model_name_or_path,
+        quantization_config=BitsAndBytesConfig(load_in_8bit=True),
+        torch_dtype=torch.float16,
+        token=True,
     )
+    model = prepare_model_for_kbit_training(model)
     model = PeftModel.from_pretrained(model, output_dir)
     model.print_trainable_parameters()
     print('======')
@@ -475,7 +482,7 @@ def main(load_step):
         # Otherwise, `DataCollatorWithPadding` will apply dynamic padding for us (by padding to the maximum length of
         # the samples passed). When using mixed precision, we add `pad_to_multiple_of=8` to pad all tensors to multiple
         # of 8s, which will enable the use of Tensor Cores on NVIDIA hardware with compute capability >= 7.5 (Volta).
-        data_collator = DataCollatorWithPadding(tokenizer, pad_to_multiple_of=(8 if accelerator.use_fp16 else None))
+        data_collator = DataCollatorWithPadding(tokenizer, pad_to_multiple_of=(8 if (accelerator.mixed_precision == "fp16") else None))
 
     # selected_indices = list(range(10))
     # train_dataset = train_dataset.select(selected_indices)
@@ -527,13 +534,13 @@ def main(load_step):
             super().__init__()
 
             if args.task_name == 'boolq':
-                self.id_list = [tokenizer.encode('False')[1], tokenizer.encode('True')[1]]
+                self.id_list = [tokenizer.encode('False', add_special_tokens=False)[0], tokenizer.encode('True', add_special_tokens=False)[0]]
             elif args.task_name == 'openbookqa':
-                self.id_list = [tokenizer.encode('A')[1], tokenizer.encode('B')[1], tokenizer.encode('C')[1], tokenizer.encode('D')[1]]
+                self.id_list = [tokenizer.encode('A', add_special_tokens=False)[0], tokenizer.encode('B', add_special_tokens=False)[0], tokenizer.encode('C', add_special_tokens=False)[0], tokenizer.encode('D', add_special_tokens=False)[0]]
             elif 'ARC' in args.task_name:
-                self.id_list = [tokenizer.encode('A')[1], tokenizer.encode('B')[1], tokenizer.encode('C')[1], tokenizer.encode('D')[1]]
+                self.id_list = [tokenizer.encode('A', add_special_tokens=False)[0], tokenizer.encode('B', add_special_tokens=False)[0], tokenizer.encode('C', add_special_tokens=False)[0], tokenizer.encode('D', add_special_tokens=False)[0]]
             elif 'winogrande' in args.task_name:
-                self.id_list = [tokenizer.encode('A')[1], tokenizer.encode('B')[1]]
+                self.id_list = [tokenizer.encode('A', add_special_tokens=False)[0], tokenizer.encode('B', add_special_tokens=False)[0]]
 
             if args.lm_head:
                 original_lm_head = model.base_model.model.lm_head
@@ -602,15 +609,16 @@ def main(load_step):
     model.eval()
 
     # Get the metric function
+    experiment_id = f"{laplace_output_dir}/prior_precision_{args.laplace_hessian}_{args.laplace_sub}_{args.laplace_prior}_{args.laplace_optim_step}".replace("/", "_")
     if args.task_name is not None:
         if args.task_name in ['wnli', 'rte', 'mrpc', 'cola', 'sst2', 'qnli', 'qqp', 'mnli']:
-            metric = evaluate.load("glue", args.task_name, experiment_id=f"{laplace_output_dir}/prior_precision_{args.laplace_hessian}_{args.laplace_sub}_{args.laplace_prior}_{args.laplace_optim_step}")
+            metric = evaluate.load("glue", args.task_name, experiment_id=experiment_id)
         elif args.task_name in ['cb', 'wic', 'boolq']:
-            metric = evaluate.load("super_glue", args.task_name, experiment_id=f"{laplace_output_dir}/prior_precision_{args.laplace_hessian}_{args.laplace_sub}_{args.laplace_prior}_{args.laplace_optim_step}")
+            metric = evaluate.load("super_glue", args.task_name, experiment_id=experiment_id)
         else:
-            metric = evaluate.load("accuracy", experiment_id=f"{laplace_output_dir}/prior_precision_{args.laplace_hessian}_{args.laplace_sub}_{args.laplace_prior}_{args.laplace_optim_step}")
+            metric = evaluate.load("accuracy", experiment_id=experiment_id)
     else:
-        metric = evaluate.load("accuracy", experiment_id=f"{laplace_output_dir}/prior_precision_{args.laplace_hessian}_{args.laplace_sub}_{args.laplace_prior}_{args.laplace_optim_step}")
+        metric = evaluate.load("accuracy", experiment_id=experiment_id)
 
 
     la = Laplace(model, 'classification', prior_precision=1.,
@@ -703,6 +711,11 @@ def main(load_step):
 
     all_results = {f"eval_{k}": v for k, v in eval_metric.items()}
 
+    all_probs = torch.tensor([d["probs"] for d in output_dicts], dtype=torch.float32)
+    all_labels = torch.tensor([d["true"] for d in output_dicts], dtype=torch.long)
+    extra_metrics = compute_all_metrics(all_probs, all_labels)
+    all_results.update({f"eval_{k}": v for k, v in extra_metrics.items()})
+
     all_results_path = os.path.join(output_dir, f"all_results_la_{args.laplace_hessian}_{args.laplace_sub}_{args.laplace_prior}_{args.laplace_predict}_{args.laplace_optim_step}.json")
 
     # delete the all_results file if it exists
@@ -721,6 +734,5 @@ def main(load_step):
 
 
 if __name__ == "__main__":
-    step_list = [0,*list(range(999, 10999, 1000))]
-    for load_step in step_list:
-        main(load_step)
+    args = parse_args()
+    main(args.load_step)

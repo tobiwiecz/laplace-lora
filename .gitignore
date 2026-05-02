@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+
+# Outputs
+outputs/
+outputs_laplace/
+logs/
+plots/
+
+# Hypothesis / test cache
+.hypothesis/
+
+# IDE
+.vscode/
