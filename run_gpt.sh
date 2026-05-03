@@ -2,9 +2,11 @@ source "$(dirname "$0")/.venv/bin/activate"
 export TORCHDYNAMO_DISABLE=1
 
 #tasks=(winogrande_s ARC-Challenge ARC-Easy winogrande_m openbookqa boolq)
-seeds=(21 42 87 13 100)
 
 tasks=(${TASKS:-winogrande_s})
+seeds=(${SEEDS:-21 42 87 13 100})
+
+declare -A seed_to_label=([21]=seed1 [42]=seed2 [87]=seed3 [13]=seed4 [100]=seed5)
 
 model=meta-llama/Llama-2-7b-chat-hf
 
@@ -14,9 +16,8 @@ max_len=300
 num_gpus=$(nvidia-smi --list-gpus | wc -l)
 
 for task in "${tasks[@]}"; do
-    for i in "${!seeds[@]}"; do
-        seed=${seeds[$i]}
-        seed_label="seed$((i+1))"
+    for seed in "${seeds[@]}"; do
+        seed_label="${seed_to_label[$seed]}"
         model_tag="${model//\//__}"
         log_dir="logs/${model_tag}/${task}"
         mkdir -p "$log_dir"

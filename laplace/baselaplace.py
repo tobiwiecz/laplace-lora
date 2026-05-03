@@ -442,8 +442,15 @@ class ParametricLaplace(BaseLaplace):
             self._backend = None
             self.model.zero_grad()
 
-            loss_batch, H_batch,f = self._curv_closure(batch, N)
+            loss_batch, H_batch, f = self._curv_closure(batch, N)
             self.loss += loss_batch
+            # Zero out any non-finite entries in the Kron factors before accumulation.
+            # Infinite/NaN values (e.g. from fp16 overflow on boolq) cause eigh to fail
+            # at decompose() time; treating those entries as zero discards their curvature
+            # contribution rather than corrupting the entire Hessian.
+            for F in H_batch.kfacs:
+                for factor in F:
+                    factor.nan_to_num_(nan=0.0, posinf=0.0, neginf=0.0)
             self.H += H_batch
 
             del loss_batch, H_batch

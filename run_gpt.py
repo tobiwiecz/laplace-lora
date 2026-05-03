@@ -16,6 +16,8 @@ from metrics import compute_all_metrics
 import datasets
 import evaluate
 import torch
+if not torch.cuda.is_available():
+    raise SystemExit("ERROR: No GPU detected. This script requires a CUDA-capable GPU.")
 from accelerate import Accelerator
 from accelerate.logging import get_logger
 from accelerate.utils import set_seed
@@ -411,9 +413,8 @@ def main():
     # download model & vocab.
     tokenizer = AutoTokenizer.from_pretrained(args.model_name_or_path, use_fast=not args.use_slow_tokenizer, padding_side='left', token=True)
     tokenizer.pad_token = tokenizer.bos_token
-    if args.task_name in ['boolq']:  #,'winogrande_m', 'winogrande_s']:
+    if args.task_name in ['boolq']:
         tokenizer.add_eos_token = True
-    
     model = AutoModelForCausalLM.from_pretrained(
         args.model_name_or_path,
         quantization_config=BitsAndBytesConfig(load_in_8bit=True),
@@ -668,7 +669,7 @@ def main():
                         samples_seen = 0
                         all_logits = []
                         all_labels = []
-                        for step, batch in tqdm(enumerate(test_loader)):
+                        for step, batch in tqdm(enumerate(test_loader), total=len(test_loader), desc="Eval", unit="batch"):
                             with torch.no_grad():
                                 outputs = model(**batch)
                             predictions = outputs.logits.argmax(dim=-1)

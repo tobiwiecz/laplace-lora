@@ -14,6 +14,8 @@ warnings.filterwarnings("ignore", category=FutureWarning, module="torch.nn.modul
 import datasets
 import evaluate
 import torch
+if not torch.cuda.is_available():
+    raise SystemExit("ERROR: No GPU detected. This script requires a CUDA-capable GPU.")
 from accelerate import Accelerator
 from accelerate.logging import get_logger
 from accelerate.utils import set_seed
@@ -392,9 +394,8 @@ def main(load_step):
     # download model & vocab.
     tokenizer = AutoTokenizer.from_pretrained(args.model_name_or_path, use_fast=not args.use_slow_tokenizer, padding_side='left', token=True)
     tokenizer.pad_token = tokenizer.bos_token
-    if args.task_name in ['boolq']: #,'winogrande_m', 'winogrande_s']:
+    if args.task_name in ['boolq']:
         tokenizer.add_eos_token = True
-    
 
     output_dir = args.output_dir + f'/step_{args.load_step}'
 
@@ -632,6 +633,8 @@ def main(load_step):
 
     accelerator.print('----fitting Laplace-----')
     la.fit(train_dataloader)
+    torch.save({'H': la.H, 'n_outputs': la.n_outputs},
+               f'{laplace_output_dir}/laplace_H_{args.laplace_hessian}_{args.laplace_sub}.pt')
 
     if args.testing_set == 'val':
         prior_precision = la.optimize_prior_precision(method='marglik', n_steps=args.laplace_optim_step, lr=1e-1)
@@ -648,7 +651,7 @@ def main(load_step):
     output_dicts = []
     f_mu_list = []
     f_var_list = []
-    for step, batch in tqdm(enumerate(eval_dataloader)):
+    for step, batch in tqdm(enumerate(eval_dataloader), total=len(eval_dataloader), desc="Eval", unit="batch"):
         with torch.no_grad():
             f_mu, f_var = la._glm_predictive_distribution(batch)
             f_mu_list.append(f_mu)
