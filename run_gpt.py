@@ -418,7 +418,7 @@ def main():
     model = AutoModelForCausalLM.from_pretrained(
         args.model_name_or_path,
         quantization_config=BitsAndBytesConfig(load_in_8bit=True),
-        torch_dtype=torch.float16,
+        dtype=torch.float16,
         token=True,
     )
     model = prepare_model_for_kbit_training(model, gradient_checkpointing_kwargs={"use_reentrant": False})

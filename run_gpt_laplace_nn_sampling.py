@@ -65,6 +65,7 @@ def parse_args():
     parser.add_argument("--model_name_or_path", type=str, default='meta-llama/Llama-2-7b-chat-hf')
     parser.add_argument("--use_slow_tokenizer", action="store_true")
     parser.add_argument("--per_device_eval_batch_size", type=int, default=2)
+    parser.add_argument("--per_device_map_batch_size", type=int, default=64)
     parser.add_argument("--learning_rate", type=float, default=5e-5)
     parser.add_argument("--output_dir", type=str, default='./outputs')
     parser.add_argument("--peft_method", type=str, default=None)
@@ -205,7 +206,7 @@ def main(load_step):
     model = AutoModelForCausalLM.from_pretrained(
         peft_config.base_model_name_or_path,
         quantization_config=BitsAndBytesConfig(load_in_8bit=True),
-        torch_dtype=torch.float16,
+        dtype=torch.float16,
         token=True,
     )
     model = prepare_model_for_kbit_training(model)
@@ -269,6 +270,7 @@ def main(load_step):
         data_collator = DataCollatorWithPadding(tokenizer, pad_to_multiple_of=(8 if (accelerator.mixed_precision == "fp16") else None))
 
     eval_dataloader = DataLoader(eval_dataset, shuffle=False, collate_fn=data_collator, batch_size=args.per_device_eval_batch_size)
+    map_dataloader = DataLoader(eval_dataset, shuffle=False, collate_fn=data_collator, batch_size=args.per_device_map_batch_size)
 
     class CustomLMHead_lora(torch.nn.Module):
         def __init__(self, original_lm_head, id_list):
@@ -287,11 +289,13 @@ def main(load_step):
             self.lora_B = torch.nn.Linear(in_features=original_lora_B_weight.shape[1], out_features=len(id_list), bias=False).to(accelerator.device)
             self.lora_B.weight.data = original_lora_B_weight.to(torch.float32)
             self.lora_B.weight.requires_grad = True
+            self.scaling = args.lora_alpha / args.lora_r
 
         def forward(self, x):
-            result = self.linear(x)
-            lora_result = self.lora_B(self.lora_A(self.lora_dropout(x)))
-            return result + lora_result
+            x_last = x[:, -1, :].to(torch.float32)
+            result = self.linear(x_last)
+            lora_result = self.lora_B(self.lora_A(self.lora_dropout(x_last)))
+            return result + lora_result * self.scaling
 
     class WrappedModel(torch.nn.Module):
         def __init__(self, model):
@@ -327,7 +331,7 @@ def main(load_step):
 
     model = WrappedModel(model)
 
-    model, eval_dataloader = accelerator.prepare(model, eval_dataloader)
+    model, eval_dataloader, map_dataloader = accelerator.prepare(model, eval_dataloader, map_dataloader)
     model.eval()
 
     la = Laplace(model, 'classification', prior_precision=1.,
@@ -364,23 +368,43 @@ def main(load_step):
 
     n_samples_list = sorted(args.n_samples)
     max_samples = n_samples_list[-1]
+    tag = f'nn_sampling_{args.sampling_method}_max{max_samples}_{args.laplace_hessian}_{args.laplace_sub}_{args.laplace_prior}_{args.laplace_optim_step}'
     accelerator.print(f'Sample counts: {n_samples_list}, running {max_samples} forward passes per example.')
     accelerator.print(f'Sampling method: {args.sampling_method}')
 
-    # Collect per-sample softmax probs and MAP probs across all batches
-    all_sample_probs = []   # list of (max_samples, batch_size, n_classes) — moved to CPU immediately
-    all_map_probs = []      # list of (batch_size, n_classes)
+    def metrics_for(probs, labels):
+        acc = (probs.argmax(-1) == labels).float().mean().item()
+        m = compute_all_metrics(probs, labels)
+        m['accuracy'] = acc
+        return m
+
+    # --- Pass 1: MAP (mean network) — fast, results printed immediately ---
+    accelerator.print('\nRunning MAP evaluation...')
+    all_map_probs = []
     all_labels = []
 
-    for step, batch in tqdm(enumerate(eval_dataloader), total=len(eval_dataloader), desc=f"Eval [{args.sampling_method}]", unit="batch"):
+    for batch in tqdm(map_dataloader, total=len(map_dataloader), desc="Eval [MAP]", unit="batch"):
+        input_batch = {k: v for k, v in batch.items() if k != 'labels'}
+        with torch.no_grad():
+            map_logits = model(**input_batch)
+            all_map_probs.append(torch.softmax(map_logits.float(), dim=-1).cpu())
+        all_labels.append(batch["labels"].cpu())
+
+    all_map_probs = torch.cat(all_map_probs, dim=0)
+    all_labels = torch.cat(all_labels, dim=0)
+
+    all_results = {}
+    all_results['mean'] = metrics_for(all_map_probs, all_labels)
+    accelerator.print(f"  [mean] {all_results['mean']}")
+
+    # --- Pass 2: weight-space sampling ---
+    accelerator.print(f'\nRunning {args.sampling_method} sampling ({max_samples} max samples)...')
+    all_sample_probs = []
+
+    for batch in tqdm(eval_dataloader, total=len(eval_dataloader), desc=f"Eval [{args.sampling_method}]", unit="batch"):
         input_batch = {k: v for k, v in batch.items() if k != 'labels'}
 
         with torch.no_grad():
-            # Mean network (MAP weights, no sampling)
-            map_logits = model(**input_batch)
-            all_map_probs.append(torch.softmax(map_logits.float(), dim=-1).cpu())
-
-            # Draw max_samples weight vectors from the Laplace posterior N(theta_MAP, P^{-1})
             if args.sampling_method == 'kron':
                 weight_samples = la.sample(max_samples)
             else:
@@ -392,37 +416,15 @@ def main(load_step):
                 logits = model(**input_batch)
                 batch_sample_probs.append(torch.softmax(logits.float(), dim=-1).cpu())
 
-            # Restore MAP weights
             vector_to_parameters(la.mean, trainable_params)
 
-        # (max_samples, batch_size, n_classes)
         all_sample_probs.append(torch.stack(batch_sample_probs, dim=0))
-        all_labels.append(batch["labels"].cpu())
 
-    # Concatenate across batches: (max_samples, n_test, n_classes) and (n_test, n_classes)
+    # (max_samples, n_test, n_classes)
     all_sample_probs = torch.cat(all_sample_probs, dim=1)
-    all_map_probs = torch.cat(all_map_probs, dim=0)
-    all_labels = torch.cat(all_labels, dim=0)
-
-    # Save raw tensors for offline analysis
-    tag = f'nn_sampling_{args.sampling_method}_max{max_samples}_{args.laplace_hessian}_{args.laplace_sub}_{args.laplace_prior}_{args.laplace_optim_step}'
-    torch.save(all_sample_probs, f'{laplace_output_dir}/sample_probs_{tag}.pt')
-    torch.save(all_map_probs,    f'{laplace_output_dir}/map_probs_{tag}.pt')
-    torch.save(all_labels,       f'{laplace_output_dir}/labels_{tag}.pt')
-
-    # Compute metrics for each prefix length and the mean network
-    all_results = {}
-
-    def metrics_for(probs, labels):
-        acc = (probs.argmax(-1) == labels).float().mean().item()
-        m = compute_all_metrics(probs, labels)
-        m['accuracy'] = acc
-        return m
-
-    all_results['mean'] = metrics_for(all_map_probs, all_labels)
 
     for k in n_samples_list:
-        avg_probs_k = all_sample_probs[:k].mean(0)  # (n_test, n_classes)
+        avg_probs_k = all_sample_probs[:k].mean(0)
         key = f'{k}_sample' if k == 1 else f'{k}_samples'
         all_results[key] = metrics_for(avg_probs_k, all_labels)
 
@@ -436,7 +438,7 @@ def main(load_step):
     with open(all_results_path, 'w') as f:
         json.dump(all_results, f, indent=2)
 
-    del model, la, all_sample_probs, all_map_probs, eval_dataloader
+    del model, la, all_sample_probs, all_map_probs, eval_dataloader, map_dataloader
     torch.cuda.empty_cache()
 
 

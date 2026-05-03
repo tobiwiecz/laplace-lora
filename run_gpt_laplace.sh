@@ -1,5 +1,6 @@
 source "$(dirname "$0")/.venv/bin/activate"
 export TORCHDYNAMO_DISABLE=1
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
 #tasks=(winogrande_s ARC-Challenge ARC-Easy winogrande_m openbookqa boolq)
 #seeds=(21 42 87 13 100)
@@ -25,6 +26,13 @@ for task in "${tasks[@]}"; do
                 for laplace_prior in homo; do
                     for laplace_optim_step in 100; do
                         for load_step in "${load_steps[@]}"; do
+                        # boolq has long passages; reduce GLM predictive eval batch size to avoid OOM
+                        if [ "$task" = "boolq" ]; then
+                            task_eval_bs=4
+                        else
+                            task_eval_bs=$eval_bs
+                        fi
+
                         model_tag="${model//\//__}"
                         log_dir="logs/${model_tag}/${task}"
                         mkdir -p "$log_dir"
@@ -42,7 +50,7 @@ for task in "${tasks[@]}"; do
                             --laplace_optim_step $laplace_optim_step \
                             --load_step $load_step \
                             --per_device_train_batch_size $train_bs \
-                            --per_device_eval_batch_size $eval_bs \
+                            --per_device_eval_batch_size $task_eval_bs \
                             --max_length $max_len \
                             --testing_set val \
                             --lm_head \

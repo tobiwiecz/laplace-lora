@@ -78,6 +78,8 @@ def consolidate(step_dir, sub, args):
     for method in ['kron', 'diag']:
         sampling_data = load_json(os.path.join(step_dir, f"all_results_la_nn_sampling_{method}_max{max_n}_{h}_{sub}_{pr}_{opt}.json"))
         if sampling_data is not None:
+            if "mean" in sampling_data:
+                result["mean"] = sampling_data["mean"]
             for k in sorted(args.n_samples):
                 key = f"{k}_sample" if k == 1 else f"{k}_samples"
                 if key in sampling_data:

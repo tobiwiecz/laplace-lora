@@ -5,20 +5,20 @@ tasks=(${TASKS:-winogrande_s})
 seeds=(${SEEDS:-21})
 load_steps=(${LOAD_STEPS:-4000})
 n_samples=(${N_SAMPLES:-1 2 4 8 16})
-sampling_methods=(${SAMPLING_METHODS:-kron diag})
+sampling_methods=(${SAMPLING_METHODS:-kron diag}) # options: kron, diag
 
 declare -A seed_to_label=([21]=seed1 [42]=seed2 [87]=seed3 [13]=seed4 [100]=seed5)
 
 model=meta-llama/Llama-2-7b-chat-hf
 #model=TinyLlama/TinyLlama-1.1B-Chat-v1.0
 
-eval_bs=8
+eval_bs=16
 max_len=300
 
 for task in "${tasks[@]}"; do
     for seed in "${seeds[@]}"; do
         seed_label="${seed_to_label[$seed]}"
-        for laplace_sub in all last_layer; do
+        for laplace_sub in all; do # options: all, last_layer
             for laplace_hessian in kron; do
                 for laplace_prior in homo; do
                     for laplace_optim_step in 100; do
