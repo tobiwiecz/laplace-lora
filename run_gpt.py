@@ -3,6 +3,11 @@ import json
 import logging
 import math
 import os
+import warnings
+
+warnings.filterwarnings("ignore", message="Setting `save_embedding_layers`", category=UserWarning)
+warnings.filterwarnings("ignore", message="MatMul8bitLt: inputs will be cast", category=UserWarning)
+warnings.filterwarnings("ignore", message=".*use_reentrant parameter should be passed explicitly", category=UserWarning)
 import random
 from pathlib import Path
 
@@ -141,6 +146,7 @@ def parse_args():
     )
     parser.add_argument("--output_dir", type=str, default='./outputs', help="Where to store the final model.")
     parser.add_argument("--seed", type=int, default=0, help="A seed for reproducible training.")
+    parser.add_argument("--seed_label", type=str, default=None, help="Label used in output folder name (e.g. seed1). Defaults to the seed value.")
     parser.add_argument("--push_to_hub", action="store_true", help="Whether or not to push the model to the Hub.")
     parser.add_argument(
         "--hub_model_id", type=str, help="The name of the repository to keep in sync with the local `output_dir`."
@@ -192,7 +198,6 @@ def parse_args():
     parser.add_argument("--lm_head", action="store_true", default=False)
     args = parser.parse_args()
 
-    print(args)
 
     peft_method = 'lora'
     if args.lm_head:
@@ -201,7 +206,8 @@ def parse_args():
         peft_method += args.testing_set
 
     
-    args.output_dir += f'/{args.task_name}/{args.model_name_or_path}_{peft_method}_{args.lora_alpha}_{args.lora_dropout}_{args.learning_rate}_{args.seed}'
+    seed_label = args.seed_label if args.seed_label is not None else args.seed
+    args.output_dir += f'/{args.task_name}/{args.model_name_or_path}_{peft_method}_{args.lora_alpha}_{args.lora_dropout}_{args.learning_rate}_{seed_label}'
 
     # Sanity checks
     if args.task_name is None and args.train_file is None and args.validation_file is None:
@@ -234,7 +240,7 @@ def main():
         datefmt="%m/%d/%Y %H:%M:%S",
         level=logging.INFO,
     )
-    logger.info(accelerator.state, main_process_only=False)
+    logger.info(accelerator.state, main_process_only=True)
     if accelerator.is_local_main_process:
         datasets.utils.logging.set_verbosity_warning()
         transformers.utils.logging.set_verbosity_info()
@@ -324,15 +330,15 @@ def main():
         total_valid = len(raw_datasets["validation"])
 
         # Print counts
-        print('====counts train====')
-        print(f"Total number of training examples: {total_train}")
-        print(f"Number of training questions with 3 choices: {count_3_choices_train}")
-        print(f"Number of training questions with 5 choices: {count_5_choices_train}")
+        accelerator.print('====counts train====')
+        accelerator.print(f"Total number of training examples: {total_train}")
+        accelerator.print(f"Number of training questions with 3 choices: {count_3_choices_train}")
+        accelerator.print(f"Number of training questions with 5 choices: {count_5_choices_train}")
 
-        print('====counts valid====')
-        print(f"Total number of validation examples: {total_valid}")
-        print(f"Number of validation questions with 3 choices: {count_3_choices_valid}")
-        print(f"Number of validation questions with 5 choices: {count_5_choices_valid}")
+        accelerator.print('====counts valid====')
+        accelerator.print(f"Total number of validation examples: {total_valid}")
+        accelerator.print(f"Number of validation questions with 3 choices: {count_3_choices_valid}")
+        accelerator.print(f"Number of validation questions with 5 choices: {count_5_choices_valid}")
 
         # Filter the examples in the training dataset
         filtered_train = raw_datasets["train"].filter(lambda example: len(example['choices']['label']) == 4)
@@ -348,10 +354,10 @@ def main():
         raw_datasets["validation"] = filtered_valid
         raw_datasets["test"] = filtered_test
 
-        print('====counts train====')
-        print(f"Total number of training examples: {len(raw_datasets['train'])}")
-        print('====counts valid====')
-        print(f"Total number of validation examples: {len(raw_datasets['validation'])}")
+        accelerator.print('====counts train====')
+        accelerator.print(f"Total number of training examples: {len(raw_datasets['train'])}")
+        accelerator.print('====counts valid====')
+        accelerator.print(f"Total number of validation examples: {len(raw_datasets['validation'])}")
 
         def convert_choices_to_alpha(example):
             # Define a mapping from numerical to alphabetical labels
@@ -374,7 +380,7 @@ def main():
         raw_datasets["validation"] = raw_datasets["validation"].map(convert_choices_to_alpha)
         raw_datasets["test"] = raw_datasets["test"].map(convert_choices_to_alpha)
 
-        print('====train data====')
+        accelerator.print('====train data====')
         from collections import Counter
 
         # Initialize counters for training and validation datasets
@@ -390,13 +396,13 @@ def main():
             counter_valid.update(example['answerKey'])
 
         # Print the results
-        print("Training dataset counts:")
+        accelerator.print("Training dataset counts:")
         for choice, count in counter_train.items():
-            print(f"Choice {choice}: {count} occurrences")
+            accelerator.print(f"Choice {choice}: {count} occurrences")
 
-        print("Validation dataset counts:")
+        accelerator.print("Validation dataset counts:")
         for choice, count in counter_valid.items():
-            print(f"Choice {choice}: {count} occurrences")
+            accelerator.print(f"Choice {choice}: {count} occurrences")
 
 
     # Load pretrained model and tokenizer
@@ -414,15 +420,16 @@ def main():
         torch_dtype=torch.float16,
         token=True,
     )
-    model = prepare_model_for_kbit_training(model)
+    model = prepare_model_for_kbit_training(model, gradient_checkpointing_kwargs={"use_reentrant": False})
 
     target_modules=['v_proj','q_proj']
     if args.lm_head:
         target_modules.append('lm_head')
     peft_config = LoraConfig(task_type="CAUSAL_LM", inference_mode=False, r=8, lora_alpha=args.lora_alpha, lora_dropout=args.lora_dropout, target_modules=target_modules)
     model = get_peft_model(model, peft_config)
-    model.print_trainable_parameters()
-    print(model)
+    if accelerator.is_main_process:
+        model.print_trainable_parameters()
+    accelerator.print(model)
 
     padding = "max_length" if args.pad_to_max_length else False
 
@@ -458,9 +465,9 @@ def main():
             desc="Running tokenizer on dataset",
         )
 
-    # print('====train data====')
+    # accelerator.print('====train data====')
     train_dataset = processed_datasets["train"]
-    # print('====validation data====')
+    # accelerator.print('====validation data====')
     processed_dataset = processed_datasets["validation_matched" if args.task_name == "mnli" else "validation"]
 
     if args.testing_set == 'test':
@@ -611,7 +618,7 @@ def main():
     # Potentially load in the weights and states from a previous save
     if args.resume_from_checkpoint:
         if args.resume_from_checkpoint is not None or args.resume_from_checkpoint != "":
-            accelerator.print(f"Resumed from checkpoint: {args.resume_from_checkpoint}")
+            accelerator.accelerator.print(f"Resumed from checkpoint: {args.resume_from_checkpoint}")
             accelerator.load_state(args.resume_from_checkpoint)
             path = os.path.basename(args.resume_from_checkpoint)
         else:
@@ -638,18 +645,21 @@ def main():
 
     test_loader_list = [eval_dataloader]
     test_loader_names = ['eval']
+    test_loader_sizes = [len(eval_dataset)]
     if args.testing_set != 'val':
         test_loader_list.append(val_dataloader)
         test_loader_names.append('val')
+        test_loader_sizes.append(len(val_dataset))
         
     for epoch in range(starting_epoch, args.num_train_epochs):
         active_dataloader = train_dataloader
         for step, train_batch in enumerate(active_dataloader):
 
             if isinstance(checkpointing_steps, int):
-                for test_loader, test_loader_name in zip(test_loader_list, test_loader_names):
+                for test_loader, test_loader_name, expected_size in zip(test_loader_list, test_loader_names, test_loader_sizes):
                     if (completed_steps+1) % checkpointing_steps == 0 or completed_steps == 0:
-                        output_dir = f"step_{completed_steps}"
+                        step_label = 0 if completed_steps == 0 else completed_steps + 1
+                        output_dir = f"step_{step_label}"
                         if args.output_dir is not None:
                             output_dir = os.path.join(args.output_dir, output_dir)
                         # accelerator.save_state(output_dir)
@@ -693,22 +703,24 @@ def main():
                             if accelerator.is_main_process:
                                 tokenizer.save_pretrained(output_dir)
 
-                        all_results = {f"eval_{k}": v for k, v in eval_metric.items()}
-
                         if test_loader_name == 'val':
                             all_results_output_path = os.path.join(output_dir, f"all_results_val.json")
                         else:
                             all_results_output_path = os.path.join(output_dir, f"all_results.json")
-                        if os.path.isfile(all_results_output_path):
-                            os.remove(all_results_output_path)
-
-                        with open(all_results_output_path, "w") as f:
-                            json.dump(all_results, f)
 
                         if accelerator.is_main_process:
                             all_logits_cat = torch.cat(all_logits, dim=0)
                             all_labels_cat = torch.cat(all_labels, dim=0)
                             all_probs_cat = torch.softmax(all_logits_cat, dim=-1)
+
+                            all_results = {k.removeprefix("eval_"): v for k, v in eval_metric.items()}
+                            all_results.update(compute_all_metrics(all_probs_cat, all_labels_cat))
+
+                            if os.path.isfile(all_results_output_path):
+                                os.remove(all_results_output_path)
+                            with open(all_results_output_path, "w") as f:
+                                json.dump(all_results, f, indent=2)
+
                             output_dicts = [
                                 {
                                     'index': j,
@@ -721,16 +733,11 @@ def main():
                                 for j in range(all_logits_cat.size(0))
                             ]
 
-                            extra_metrics = compute_all_metrics(all_probs_cat, all_labels_cat)
-                            all_results.update({f"eval_{k}": v for k, v in extra_metrics.items()})
-                            with open(all_results_output_path, "w") as f:
-                                json.dump(all_results, f)
-
                             if test_loader_name == 'val':
                                 output_path = os.path.join(output_dir, f'eval_res_val.json')
                             else:
                                 output_path = os.path.join(output_dir, f'eval_res.json')
-                            print(f'writing outputs to \'{output_path}\'')
+                            accelerator.print(f'writing outputs to \'{output_path}\'')
 
                             if os.path.isfile(output_path):
                                 os.remove(output_path)
@@ -739,7 +746,13 @@ def main():
                                 for output_dict in output_dicts:
                                     f.write(f'{json.dumps(output_dict)}\n')
 
-                        del all_results, eval_metric, all_logits, all_labels, predictions, references, outputs
+                            assert len(output_dicts) == expected_size, (
+                                f"{output_path}: saved {len(output_dicts)} examples but expected {expected_size}"
+                            )
+
+                        del eval_metric, all_logits, all_labels, predictions, references, outputs
+                        if accelerator.is_main_process:
+                            del all_results
         
             if completed_steps > args.max_train_steps:
                 break

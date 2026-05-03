@@ -5,12 +5,8 @@ export TORCHDYNAMO_DISABLE=1
 #seeds=(21 42 87)
 
 tasks=(${TASKS:-winogrande_s})
-seeds=(${SEEDS:-21})
-load_steps=(${LOAD_STEPS:-999})
-
-tasks=(winogrande_s)
-seeds=(21)
-load_steps=(999)
+seeds=(${SEEDS:-21 42 87 13 100})
+load_steps=(${LOAD_STEPS:-1000})
 
 model=meta-llama/Llama-2-7b-chat-hf
 #model=TinyLlama/TinyLlama-1.1B-Chat-v1.0
@@ -20,7 +16,9 @@ eval_bs=4
 max_len=300
 
 for task in "${tasks[@]}"; do
-    for seed in "${seeds[@]}"; do
+    for i in "${!seeds[@]}"; do
+        seed=${seeds[$i]}
+        seed_label="seed$((i+1))"
         for laplace_sub in all last_layer; do
             for laplace_hessian in kron; do
                 for laplace_prior in homo; do
@@ -29,13 +27,14 @@ for task in "${tasks[@]}"; do
                         model_tag="${model//\//__}"
                         log_dir="logs/${model_tag}/${task}"
                         mkdir -p "$log_dir"
-                        log_file="${log_dir}/seed${seed}_bs${train_bs}_maxlen${max_len}_sub${laplace_sub}_hess${laplace_hessian}_prior${laplace_prior}_step${laplace_optim_step}_loadstep${load_step}.log"
+                        log_file="${log_dir}/${seed_label}_bs${train_bs}_maxlen${max_len}_sub${laplace_sub}_hess${laplace_hessian}_prior${laplace_prior}_step${laplace_optim_step}_loadstep${load_step}.log"
 
-                        echo "Running $model on task $task with seed $seed (sub=$laplace_sub, hessian=$laplace_hessian, prior=$laplace_prior, optim_step=$laplace_optim_step, load_step=$load_step)"
+                        echo "Running $model on task $task with $seed_label (seed=$seed, sub=$laplace_sub, hessian=$laplace_hessian, prior=$laplace_prior, optim_step=$laplace_optim_step, load_step=$load_step)"
                         accelerate launch --num_processes 1 run_gpt_laplace.py \
                             --model_name_or_path $model \
                             --task_name $task \
                             --seed $seed \
+                            --seed_label $seed_label \
                             --laplace_sub $laplace_sub \
                             --laplace_hessian $laplace_hessian \
                             --laplace_prior $laplace_prior \

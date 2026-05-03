@@ -103,7 +103,7 @@ def adaptive_calibration_error(
 def compute_all_metrics(
     probs: torch.Tensor,
     labels: torch.Tensor,
-    risk_levels: list[float] = (0.05, 0.1, 0.2),
+    risk_levels: list[float] = (0.001, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.3),
     n_bins: int = 15,
 ) -> dict[str, float]:
     """Compute all metrics from MC-averaged softmax probabilities and integer labels."""
@@ -111,11 +111,12 @@ def compute_all_metrics(
     accuracies = (probs.argmax(dim=-1) == labels).float()
 
     results = {
-        "nll":   nll(probs, labels).item(),
+        "accuracy": (probs.argmax(dim=-1) == labels).float().mean().item(),
+        "loss":  nll(probs, labels).item(),
         "brier": brier_score(probs, labels).item(),
         "ece":   expected_calibration_error(accuracies, confidences, n_bins).item(),
         "ace":   adaptive_calibration_error(accuracies, confidences, n_bins).item(),
-        "auc_rc": auc_risk_coverage(accuracies, confidences).item(),
+        "auc":   auc_risk_coverage(accuracies, confidences).item(),
         **{k: v.item() for k, v in coverage_at_risk(accuracies, confidences, risk_levels).items()},
     }
     return results

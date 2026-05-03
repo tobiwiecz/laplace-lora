@@ -146,6 +146,7 @@ def parse_args():
     parser.add_argument("--output_dir", type=str, default='./outputs', help="Where to store the final model.")
     parser.add_argument("--peft_method", type=str, default=None)
     parser.add_argument("--seed", type=int, default=21, help="A seed for reproducible training.")
+    parser.add_argument("--seed_label", type=str, default=None, help="Label used in output folder name (e.g. seed1). Defaults to the seed value.")
     parser.add_argument("--push_to_hub", action="store_true", help="Whether or not to push the model to the Hub.")
     parser.add_argument(
         "--hub_model_id", type=str, help="The name of the repository to keep in sync with the local `output_dir`."
@@ -198,7 +199,6 @@ def parse_args():
     parser.add_argument("--lm_head", action="store_true", default=True)
     args = parser.parse_args()
 
-    print(args)
 
     peft_method = 'lora'
     if args.lm_head:
@@ -206,8 +206,9 @@ def parse_args():
     if args.testing_set != 'val':
         peft_method += args.testing_set
 
-    args.output_dir += f'/{args.task_name}/{args.model_name_or_path}_{peft_method}_{args.lora_alpha}_{args.lora_dropout}_{args.learning_rate}_{args.seed}'
-    args.laplace_output_dir = f'outputs_laplace/{args.task_name}/{args.model_name_or_path}_{peft_method}_{args.lora_alpha}_{args.lora_dropout}_{args.learning_rate}_{args.seed}/'
+    seed_label = args.seed_label if args.seed_label is not None else args.seed
+    args.output_dir += f'/{args.task_name}/{args.model_name_or_path}_{peft_method}_{args.lora_alpha}_{args.lora_dropout}_{args.learning_rate}_{seed_label}'
+    args.laplace_output_dir = f'outputs_laplace/{args.task_name}/{args.model_name_or_path}_{peft_method}_{args.lora_alpha}_{args.lora_dropout}_{args.learning_rate}_{seed_label}/'
     
 
     # Sanity checks
@@ -245,7 +246,7 @@ def main(load_step):
         datefmt="%m/%d/%Y %H:%M:%S",
         level=logging.INFO,
     )
-    logger.info(accelerator.state, main_process_only=False)
+    logger.info(accelerator.state, main_process_only=True)
     if accelerator.is_local_main_process:
         datasets.utils.logging.set_verbosity_warning()
         transformers.utils.logging.set_verbosity_info()
@@ -311,15 +312,15 @@ def main(load_step):
         total_valid = len(raw_datasets["validation"])
 
         # Print counts
-        print('====counts train====')
-        print(f"Total number of training examples: {total_train}")
-        print(f"Number of training questions with 3 choices: {count_3_choices_train}")
-        print(f"Number of training questions with 5 choices: {count_5_choices_train}")
+        accelerator.print('====counts train====')
+        accelerator.print(f"Total number of training examples: {total_train}")
+        accelerator.print(f"Number of training questions with 3 choices: {count_3_choices_train}")
+        accelerator.print(f"Number of training questions with 5 choices: {count_5_choices_train}")
 
-        print('====counts valid====')
-        print(f"Total number of validation examples: {total_valid}")
-        print(f"Number of validation questions with 3 choices: {count_3_choices_valid}")
-        print(f"Number of validation questions with 5 choices: {count_5_choices_valid}")
+        accelerator.print('====counts valid====')
+        accelerator.print(f"Total number of validation examples: {total_valid}")
+        accelerator.print(f"Number of validation questions with 3 choices: {count_3_choices_valid}")
+        accelerator.print(f"Number of validation questions with 5 choices: {count_5_choices_valid}")
 
         # Filter the examples in the training dataset
         filtered_train = raw_datasets["train"].filter(lambda example: len(example['choices']['label']) == 4)
@@ -335,10 +336,10 @@ def main(load_step):
         raw_datasets["validation"] = filtered_valid
         raw_datasets["test"] = filtered_test
 
-        print('====counts train====')
-        print(f"Total number of training examples: {len(raw_datasets['train'])}")
-        print('====counts valid====')
-        print(f"Total number of validation examples: {len(raw_datasets['validation'])}")
+        accelerator.print('====counts train====')
+        accelerator.print(f"Total number of training examples: {len(raw_datasets['train'])}")
+        accelerator.print('====counts valid====')
+        accelerator.print(f"Total number of validation examples: {len(raw_datasets['validation'])}")
 
         def convert_choices_to_alpha(example):
             # Define a mapping from numerical to alphabetical labels
@@ -360,7 +361,7 @@ def main(load_step):
         raw_datasets["validation"] = raw_datasets["validation"].map(convert_choices_to_alpha)
         raw_datasets["test"] = raw_datasets["test"].map(convert_choices_to_alpha)
 
-        print('====train data====')
+        accelerator.print('====train data====')
         from collections import Counter
 
         # Initialize counters for training and validation datasets
@@ -376,13 +377,13 @@ def main(load_step):
             counter_valid.update(example['answerKey'])
 
         # Print the results
-        print("Training dataset counts:")
+        accelerator.print("Training dataset counts:")
         for choice, count in counter_train.items():
-            print(f"Choice {choice}: {count} occurrences")
+            accelerator.print(f"Choice {choice}: {count} occurrences")
 
-        print("Validation dataset counts:")
+        accelerator.print("Validation dataset counts:")
         for choice, count in counter_valid.items():
-            print(f"Choice {choice}: {count} occurrences")
+            accelerator.print(f"Choice {choice}: {count} occurrences")
 
 
     # Load pretrained model and tokenizer
@@ -407,9 +408,10 @@ def main(load_step):
     )
     model = prepare_model_for_kbit_training(model)
     model = PeftModel.from_pretrained(model, output_dir)
-    model.print_trainable_parameters()
-    print('======')
-    print(model)
+    if accelerator.is_main_process:
+        model.print_trainable_parameters()
+    accelerator.print('======')
+    accelerator.print(model)
 
 
 
@@ -419,7 +421,8 @@ def main(load_step):
             if 'all' in args.laplace_sub:
                 param.requires_grad = True
 
-    model.print_trainable_parameters()
+    if accelerator.is_main_process:
+        model.print_trainable_parameters()
 
 
     padding = "max_length" if args.pad_to_max_length else False
@@ -548,8 +551,9 @@ def main(load_step):
             
             self.model = model
 
-            model.print_trainable_parameters()
-            print(self.model)
+            if accelerator.is_main_process:
+                model.print_trainable_parameters()
+            accelerator.print(self.model)
 
 
         def forward(self, **kwargs):
@@ -564,8 +568,8 @@ def main(load_step):
         
     model = WrappedModel(model)
 
-    print('====model====')
-    # print(model.model.base_model.model.lm_head.linear.weight)
+    accelerator.print('====model====')
+    # accelerator.print(model.model.base_model.model.lm_head.linear.weight)
 
     # Optimizer
     # Split weights in two groups, one with weight decay and the other not.
@@ -626,17 +630,17 @@ def main(load_step):
                     hessian_structure=args.laplace_hessian)
 
 
-    print('----fitting Laplace-----')
+    accelerator.print('----fitting Laplace-----')
     la.fit(train_dataloader)
 
     if args.testing_set == 'val':
         prior_precision = la.optimize_prior_precision(method='marglik', n_steps=args.laplace_optim_step, lr=1e-1)
-        print(f'prior precision: {prior_precision}')    
+        accelerator.print(f'prior precision: {prior_precision}')    
     else:
         prior_precision = la.optimize_prior_precision(method='val_gd', val_loader=val_dataloader, n_steps=args.laplace_optim_step, lr=1e-1)
     
     torch.save(prior_precision, f'{laplace_output_dir}/prior_precision_{args.laplace_hessian}_{args.laplace_sub}_{args.laplace_prior}_{args.laplace_optim_step}.pt')
-    print('prior precision', prior_precision)
+    accelerator.print('prior precision', prior_precision)
 
 
 
@@ -688,15 +692,15 @@ def main(load_step):
 
     f_mu = torch.cat(f_mu_list, dim=0)
     f_var = torch.cat(f_var_list, dim=0)
-    print('f_mu shape', f_mu.shape)
-    print('f_var shape', f_var.shape)
-    print(f_mu)
-    print(f_var)
+    accelerator.print('f_mu shape', f_mu.shape)
+    accelerator.print('f_var shape', f_var.shape)
+    accelerator.print(f_mu)
+    accelerator.print(f_var)
     torch.save(f_mu, f'{laplace_output_dir}/f_mu_{args.laplace_hessian}_{args.laplace_sub}_{args.laplace_prior}_{args.laplace_optim_step}.pt')
     torch.save(f_var, f'{laplace_output_dir}/f_var_{args.laplace_hessian}_{args.laplace_sub}_{args.laplace_prior}_{args.laplace_optim_step}.pt')
 
     output_path = os.path.join(output_dir, f'eval_res_la_{args.laplace_hessian}_{args.laplace_sub}_{args.laplace_prior}_{args.laplace_predict}_{args.laplace_optim_step}.json')
-    print(f'writing outputs to \'{output_path}\'')
+    accelerator.print(f'writing outputs to \'{output_path}\'')
 
     # delete the file if it exists
     if os.path.isfile(output_path):
@@ -709,12 +713,10 @@ def main(load_step):
 
     eval_metric = metric.compute()
 
-    all_results = {f"eval_{k}": v for k, v in eval_metric.items()}
-
     all_probs = torch.tensor([d["probs"] for d in output_dicts], dtype=torch.float32)
     all_labels = torch.tensor([d["true"] for d in output_dicts], dtype=torch.long)
-    extra_metrics = compute_all_metrics(all_probs, all_labels)
-    all_results.update({f"eval_{k}": v for k, v in extra_metrics.items()})
+    all_results = {k.removeprefix("eval_"): v for k, v in eval_metric.items()}
+    all_results.update(compute_all_metrics(all_probs, all_labels))
 
     all_results_path = os.path.join(output_dir, f"all_results_la_{args.laplace_hessian}_{args.laplace_sub}_{args.laplace_prior}_{args.laplace_predict}_{args.laplace_optim_step}.json")
 
