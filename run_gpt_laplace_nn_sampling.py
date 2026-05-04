@@ -26,7 +26,6 @@ import transformers
 from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
-    BitsAndBytesConfig,
     DataCollatorWithPadding,
     default_data_collator,
 )
@@ -39,7 +38,6 @@ from peft import (
     get_peft_model,
     get_peft_model_state_dict,
     set_peft_model_state_dict,
-    prepare_model_for_kbit_training,
     LoraConfig,
     PeftType,
     PrefixTuningConfig,
@@ -205,11 +203,9 @@ def main(load_step):
     peft_config = PeftConfig.from_pretrained(output_dir)
     model = AutoModelForCausalLM.from_pretrained(
         peft_config.base_model_name_or_path,
-        quantization_config=BitsAndBytesConfig(load_in_8bit=True),
-        dtype=torch.float16,
+        torch_dtype=torch.bfloat16,
         token=True,
     )
-    model = prepare_model_for_kbit_training(model)
     model = PeftModel.from_pretrained(model, output_dir)
     if accelerator.is_main_process:
         model.print_trainable_parameters()
@@ -360,9 +356,15 @@ def main(load_step):
     accelerator.print(f'Loaded Hessian from {H_path}')
     accelerator.print(f'Prior precision: {la.prior_precision}')
 
-    # Parameters over which the Laplace posterior is defined (same filter as la.mean)
+    # Parameters over which the Laplace posterior is defined (same filter as la.mean).
+    # Cast to float32: backbone LoRA params are bfloat16 but Laplace samples are float32;
+    # without this, vector_to_parameters silently quantizes perturbations to bfloat16.
+    # Only the small LoRA tensors (rank-8) are promoted — frozen backbone stays bfloat16.
     trainable_params = [p for n, p in model.named_parameters()
                         if p.requires_grad and 'modules_to_save' not in n]
+    for p in trainable_params:
+        p.data = p.data.float()
+    la.mean = parameters_to_vector(trainable_params).detach()  # recompute in float32
     accelerator.print(f'Number of Laplace parameters: {la.n_params}')
     accelerator.print(f'Number of trainable params collected: {sum(p.numel() for p in trainable_params)}')
 

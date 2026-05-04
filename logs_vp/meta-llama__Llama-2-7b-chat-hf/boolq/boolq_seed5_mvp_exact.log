@@ -1,0 +1,2 @@
+Logging to: logs_vp/meta-llama__Llama-2-7b-chat-hf/boolq/boolq_seed5_mvp_exact.log
+Running VP calibration: meta-llama/Llama-2-7b-chat-hf | boolq | seed5 | sub=all | rms=mvp | swiglu=exact | total_steps=200

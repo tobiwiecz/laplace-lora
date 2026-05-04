@@ -29,7 +29,6 @@ from transformers import (
     AutoConfig,
     AutoModelForCausalLM,
     AutoTokenizer,
-    BitsAndBytesConfig,
     DataCollatorWithPadding,
     PretrainedConfig,
     SchedulerType,
@@ -46,7 +45,6 @@ from peft import (
     get_peft_model,
     get_peft_model_state_dict,
     set_peft_model_state_dict,
-    prepare_model_for_kbit_training,
     LoraConfig,
     PeftType,
     PrefixTuningConfig,
@@ -403,11 +401,9 @@ def main(load_step):
     peft_config = PeftConfig.from_pretrained(output_dir)
     model = AutoModelForCausalLM.from_pretrained(
         peft_config.base_model_name_or_path,
-        quantization_config=BitsAndBytesConfig(load_in_8bit=True),
-        dtype=torch.float16,
+        torch_dtype=torch.bfloat16,
         token=True,
     )
-    model = prepare_model_for_kbit_training(model)
     model = PeftModel.from_pretrained(model, output_dir)
     if accelerator.is_main_process:
         model.print_trainable_parameters()
@@ -632,7 +628,23 @@ def main(load_step):
 
 
     accelerator.print('----fitting Laplace-----')
+    # For diagonal Hessian, asdl's cov_diag_weight does a direct matmul of
+    # in_data and out_grads and requires them to share dtype.  Backbone LoRA
+    # layers receive fp16 activations from the quantised model, causing a
+    # Half != float error.  Register pre-forward hooks to cast inputs to fp32
+    # on all trainable linear layers that are not the lm_head (which already
+    # casts internally via CustomLMHead_lora.forward).
+    _fp32_hooks = []
+    if args.laplace_hessian == 'diag':
+        def _cast_to_fp32(module, args):
+            return tuple(a.float() if isinstance(a, torch.Tensor) else a for a in args)
+        for name, module in model.named_modules():
+            if isinstance(module, torch.nn.Linear) and 'lm_head' not in name:
+                if any(p.requires_grad for p in module.parameters(recurse=False)):
+                    _fp32_hooks.append(module.register_forward_pre_hook(_cast_to_fp32))
     la.fit(train_dataloader)
+    for h in _fp32_hooks:
+        h.remove()
     torch.save({'H': la.H, 'n_outputs': la.n_outputs},
                f'{laplace_output_dir}/laplace_H_{args.laplace_hessian}_{args.laplace_sub}.pt')
 

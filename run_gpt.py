@@ -32,7 +32,6 @@ from transformers import (
     AutoConfig,
     AutoModelForCausalLM,
     AutoTokenizer,
-    BitsAndBytesConfig,
     DataCollatorWithPadding,
     PretrainedConfig,
     SchedulerType,
@@ -48,7 +47,6 @@ from peft import (
     get_peft_model,
     get_peft_model_state_dict,
     set_peft_model_state_dict,
-    prepare_model_for_kbit_training,
     LoraConfig,
     PeftType,
     PrefixTuningConfig,
@@ -417,11 +415,9 @@ def main():
         tokenizer.add_eos_token = True
     model = AutoModelForCausalLM.from_pretrained(
         args.model_name_or_path,
-        quantization_config=BitsAndBytesConfig(load_in_8bit=True),
-        dtype=torch.float16,
+        torch_dtype=torch.bfloat16,
         token=True,
     )
-    model = prepare_model_for_kbit_training(model, gradient_checkpointing_kwargs={"use_reentrant": False})
 
     target_modules=['v_proj','q_proj']
     if args.lm_head:

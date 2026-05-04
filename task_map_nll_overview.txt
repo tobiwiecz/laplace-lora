@@ -1,0 +1,30 @@
+MAP NLL vs Random Chance — Llama-2-7b-chat-hf, step 4000, mean over 5 seeds
+=============================================================================
+Source: outputs/{task}/meta-llama/Llama-2-7b-chat-hf_lora_lmhead_16_0.1_5e-05_seed{1-5}/step_4000/all_results.json
+
+Random chance baselines:
+  2-choice tasks (winogrande, boolq): log(2) ≈ 0.693
+  4-choice tasks (ARC-*, openbookqa): log(4) ≈ 1.386
+
+Task              Choices  Random NLL  Mean NLL  Mean Acc  Below random?
+---------------------------------------------------------------------------
+boolq                2       0.693      0.385     83.6%     YES
+ARC-Easy             4       1.386      1.190     84.6%     YES
+openbookqa           4       1.386      0.961     77.8%     YES
+winogrande_m         2       0.693      1.452     70.2%     NO
+winogrande_s         2       0.693      2.997     64.9%     NO  (overconfident)
+ARC-Challenge        4       1.386      3.329     64.3%     NO  (overconfident)
+
+Per-seed NLL breakdown:
+  boolq:       [0.385, 0.379, 0.385, 0.391, 0.383]
+  ARC-Easy:    [1.227, 1.147, 1.248, 1.223, 1.106]
+  openbookqa:  [0.919, 0.929, 0.979, 0.936, 1.041]
+  winogrande_m:[1.419, 1.434, 1.454, 1.476, 1.474]
+  winogrande_s:[3.285, 2.991, 3.080, 2.737, 2.893]
+  ARC-Challenge:[3.383, 3.276, 3.241, 3.466, 3.278]
+
+Notes:
+- boolq, ARC-Easy, openbookqa are the three tasks worth pursuing for VP calibration.
+- winogrande_m has decent accuracy (70%) but NLL is 2x random: badly miscalibrated.
+- winogrande_s and ARC-Challenge have NLL far above random despite above-random accuracy:
+  the model is confidently wrong, making calibration very difficult.

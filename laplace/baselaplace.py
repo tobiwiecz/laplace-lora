@@ -448,16 +448,20 @@ class ParametricLaplace(BaseLaplace):
             # Infinite/NaN values (e.g. from fp16 overflow on boolq) cause eigh to fail
             # at decompose() time; treating those entries as zero discards their curvature
             # contribution rather than corrupting the entire Hessian.
-            for F in H_batch.kfacs:
-                for factor in F:
-                    factor.nan_to_num_(nan=0.0, posinf=0.0, neginf=0.0)
+            if hasattr(H_batch, 'kfacs'):
+                for F in H_batch.kfacs:
+                    for factor in F:
+                        factor.nan_to_num_(nan=0.0, posinf=0.0, neginf=0.0)
+            elif isinstance(H_batch, torch.Tensor):
+                H_batch.nan_to_num_(nan=0.0, posinf=0.0, neginf=0.0)
             self.H += H_batch
 
             del loss_batch, H_batch
 
         self.n_data += N
 
-        print('H len', self.H.__len__())
+        if hasattr(self.H, '__len__'):
+            print('H len', self.H.__len__())
 
 
     @property

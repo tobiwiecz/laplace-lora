@@ -1,11 +1,14 @@
+#!/usr/bin/env bash
 source "$(dirname "$0")/.venv/bin/activate"
 export TORCHDYNAMO_DISABLE=1
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
-tasks=(${TASKS:-winogrande_s})
-seeds=(${SEEDS:-21})
-load_steps=(${LOAD_STEPS:-4000})
-n_samples=(${N_SAMPLES:-1 2 4 8 16})
-sampling_methods=(${SAMPLING_METHODS:-kron diag}) # options: kron, diag
+# ── Configuration  (all overridable via env vars of the same name) ────────────
+IFS=' ' read -r -a tasks           <<< "${TASKS:-winogrande_s}"
+IFS=' ' read -r -a seeds           <<< "${SEEDS:-21}"
+IFS=' ' read -r -a load_steps      <<< "${LOAD_STEPS:-4000}"
+IFS=' ' read -r -a n_samples       <<< "${N_SAMPLES:-1 2 4 8 16}"
+IFS=' ' read -r -a sampling_methods <<< "${SAMPLING_METHODS:-kron diag}"
 
 declare -A seed_to_label=([21]=seed1 [42]=seed2 [87]=seed3 [13]=seed4 [100]=seed5)
 
@@ -15,6 +18,15 @@ model=meta-llama/Llama-2-7b-chat-hf
 eval_bs=16
 max_len=300
 
+# ── Script-level log ─────────────────────────────────────────────────────────
+_model_tag="${model//\//__}"
+_log_dir="logs/${_model_tag}/${tasks[0]}"
+mkdir -p "$_log_dir"
+_script_log="${_log_dir}/${tasks[0]}_${seed_to_label[${seeds[0]}]}_nn_sampling.log"
+exec > >(tee "$_script_log") 2>&1
+echo "Logging to: $_script_log"
+
+# ── Sweep ─────────────────────────────────────────────────────────────────────
 for task in "${tasks[@]}"; do
     for seed in "${seeds[@]}"; do
         seed_label="${seed_to_label[$seed]}"
@@ -24,8 +36,7 @@ for task in "${tasks[@]}"; do
                     for laplace_optim_step in 100; do
                         for load_step in "${load_steps[@]}"; do
                         for sampling_method in "${sampling_methods[@]}"; do
-                        model_tag="${model//\//__}"
-                        log_dir="logs/${model_tag}/${task}"
+                        log_dir="logs/${_model_tag}/${task}"
                         mkdir -p "$log_dir"
                         max_n=${n_samples[-1]}
                         log_file="${log_dir}/${seed_label}_maxlen${max_len}_sub${laplace_sub}_hess${laplace_hessian}_prior${laplace_prior}_step${laplace_optim_step}_loadstep${load_step}_nn_sampling_${sampling_method}_max${max_n}.log"

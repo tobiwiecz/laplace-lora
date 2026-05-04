@@ -1,0 +1,168 @@
+Llama-2-7B + LoRA — Variance Propagation Architecture
+=======================================================
+Shapes: B=batch, S=seq_len, H=4096, heads=32, head_dim=128, ffn=11008, r=8
+
+Notation
+--------
+  [det]   deterministic layer — passes mean unchanged, propagates variance via W²
+  [LoRA]  uncertain layer    — LoRA posterior scaled by exp(log_s) before VP
+  〈T〉    learnable variance scale applied here (per-sub-block or global)
+  (var=0) variance is zero here (deterministic embedding)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Input: token ids  [B, S]
+│
+▼
+embed_tokens  Embedding(32000 → H)          [det, var=0]
+  mean: [B, S, H]   var: [B, S, H] = 0
+
+│
+▼  ×32  LlamaDecoderLayer  (layer index i = 0…31)
+┌──────────────────────────────────────────────────────────────────────────┐
+│                                                                          │
+│  ┌─ x_in = x  (residual copy)                                           │
+│  │                                                                       │
+│  ▼                                                                       │
+│  input_layernorm  RMSNorm(H)               [det, mvp or streamlined]    │
+│    mean: [B, S, H]   var: [B, S, H]                                     │
+│                                                                          │
+│  ── LlamaAttention ────────────────────────────────────────────────────  │
+│  │                                                                       │
+│  ├─ q_proj  Linear(H→H) + LoRA A:[r,H] B:[H,r]       [LoRA, var_scale=exp(log_s)]
+│  │    VP: var_out = W_eff² @ var_in  +  LoRA_var(A,B,s)                 │
+│  │    out mean/var: [B, S, H]                                            │
+│  │    (Q variance computed but DISCARDED — only mean used for scores)   │
+│  │                                                                       │
+│  ├─ k_proj  Linear(H→H)                               [det]             │
+│  │    out mean: [B, S, H]   (no variance propagated through K)          │
+│  │                                                                       │
+│  ├─ v_proj  Linear(H→H) + LoRA A:[r,H] B:[H,r]       [LoRA, var_scale=exp(log_s)]
+│  │    VP: var_out = W_eff² @ var_in  +  LoRA_var(A,B,s)                 │
+│  │    out mean/var: [B, S, H]                                            │
+│  │                                                                       │
+│  ├─ reshape Q,K,V  →  [B, 32, S, 128]                                   │
+│  ├─ apply_rotary_pos_emb(Q_mean, K_mean)   [det, means only]            │
+│  │                                                                       │
+│  ├─ scores = Q_mean @ K_meanᵀ / √128      [B, 32, S, S]  (det)         │
+│  ├─ + causal_mask                                                        │
+│  ├─ attn_weights = softmax(scores)         [B, 32, S, S]  (det)         │
+│  │                                                                       │
+│  ├─ out_mean = attn_weights @ V_mean       [B, 32, S, 128]              │
+│  ├─ out_var  = attn_weights² @ V_var       [B, 32, S, 128]  (VALUE_ONLY)│
+│  ├─ reshape  →  [B, S, H]                                               │
+│  │                                                                       │
+│  └─ o_proj  Linear(H→H)                              [det]              │
+│       VP: var_out = W² @ var_in                                          │
+│       out mean/var: [B, S, H]                                            │
+│                                                                          │
+│  residual add:   x = x_in + attn_out                                    │
+│    mean: x_in.mean + attn_out.mean                                       │
+│    var:  x_in.var  + attn_out.var                                        │
+│                                                                          │
+│  〈T_attn[i]〉  x.var  *= exp(log_T[i, 0])    ← learnable scale        │
+│    (global variant: shared T;  per_layer: T_attn=None, scale after MLP) │
+│                                                                          │
+│  ┌─ x_in2 = x  (residual copy)                                          │
+│  │                                                                       │
+│  ▼                                                                       │
+│  post_attention_layernorm  RMSNorm(H)      [det, mvp or streamlined]    │
+│    mean/var: [B, S, H]                                                   │
+│                                                                          │
+│  ── LlamaMLP (SwiGLU) ─────────────────────────────────────────────────  │
+│  │                                                                       │
+│  ├─ gate_proj  Linear(H→11008)                        [det]             │
+│  │    VP: var_out = W² @ var_in                                          │
+│  │    out mean/var: [B, S, 11008]                                        │
+│  │                                                                       │
+│  ├─ up_proj    Linear(H→11008)                        [det]             │
+│  │    VP: var_out = W² @ var_in                                          │
+│  │    out mean/var: [B, S, 11008]                                        │
+│  │                                                                       │
+│  ├─ SwiGLU  = SiLU(gate) * up              [delta / linearisation]      │
+│  │    mean: SiLU(μ_gate) * μ_up                                          │
+│  │    var:  (SiLU'(μ_gate) * μ_up)² * var_gate                          │
+│  │        +  SiLU(μ_gate)²             * var_up                          │
+│  │    out mean/var: [B, S, 11008]                                        │
+│  │                                                                       │
+│  └─ down_proj  Linear(11008→H)                        [det]             │
+│       VP: var_out = W² @ var_in                                          │
+│       out mean/var: [B, S, H]                                            │
+│                                                                          │
+│  residual add:   x = x_in2 + mlp_out                                    │
+│    mean: x_in2.mean + mlp_out.mean                                       │
+│    var:  x_in2.var  + mlp_out.var                                        │
+│                                                                          │
+│  〈T_mlp[i]〉   x.var  *= exp(log_T[i, 1])   ← learnable scale         │
+│    (per_layer variant: single T applied here after full layer)           │
+│                                                                          │
+└──────────────────────────────────────────────────────────────────────────┘
+│
+▼
+norm  RMSNorm(H)                             [det, mvp or streamlined]
+  mean/var: [B, S, H]
+
+│
+▼  slice last token  [:, -1, :]
+  mean/var: [B, H]
+
+│
+▼
+lm_head  Linear(H→n_answers) + LoRA A:[r,H] B:[n_answers,r]
+                                             [LoRA, var_scale=exp(log_s)]
+  VP: var_out = W_eff² @ var_in  +  LoRA_var(A,B,s)
+  out mean/var: [B, n_answers]
+
+│
+▼
+〈T_logit〉   var *= exp(log_T_logit)         ← learnable scale
+  (per_sub_block_logit variant only)
+
+│
+▼
+MC predictive:  z ~ N(mean, diag(var))
+  p̂(y|x) = E[softmax(z)]  ≈  (1/K) Σ softmax(mean + √var · ε_k),  ε_k ~ N(0,I)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Calibration variants and their learnable parameters
+----------------------------------------------------
+
+  last_layer        log_s (1)
+                    Backbone runs MAP (var=0 entering lm_head from backbone).
+                    Only lm_head LoRA variance is propagated.
+
+  global            log_s (1)  +  log_T scalar (1)
+                    Single T applied to both T_attn and T_mlp at every layer.
+
+  per_layer         log_s (1)  +  log_T[32] (32)
+                    One T per layer, applied after MLP residual (full layer output).
+                    T_attn=None (no scaling after attention residual alone).
+
+  per_sub_block     log_s (1)  +  log_T[32, 2] (64)
+                    Separate T_attn[i] and T_mlp[i] per layer.
+
+  per_sub_block_logit  log_s (1)  +  log_T[32, 2] (64)  +  log_T_logit (1)
+                    As above, plus a final scale on the logit-level variance.
+
+Two-phase optimisation
+----------------------
+  Phase 1 (last_layer):  optimise log_s alone  →  identifies global posterior scale
+  Phase 2 (backbone variants):  initialise log_s = log_s*  from phase 1
+                                 freeze log_s  (or finetune at LR_S_FINETUNE)
+                                 optimise log_T  at full LR
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Model config (Llama-2-7B-chat-hf, LoRA r=8 alpha=16)
+-----------------------------------------------------
+  hidden_size          4096
+  num_hidden_layers    32
+  num_attention_heads  32
+  head_dim             128
+  intermediate_size    11008
+  vocab_size           32000
+  LoRA targets         q_proj, v_proj, lm_head
+  LoRA rank            8
+  LoRA alpha           16   →  scaling = alpha/r = 2.0
+  n_answers            2 (winogrande) | 4 (ARC, openbookqa) | 2 (boolq)

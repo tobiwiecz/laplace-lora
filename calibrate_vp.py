@@ -12,7 +12,7 @@ scalars on the validation NLL:
          variance accumulation.
 
 Five parameterisation variants (flags at top of file):
-  last_layer         — backbone MAP, LM-head VP only; log_s (1 param)
+  log_s_only         — full backbone VP, no temperature scaling; log_s (1 param)
   global             — full backbone VP; log_s + global log_T (2 params)
   per_layer          — full backbone VP; log_s + log_T[N] (N+1 params)
   per_sub_block      — full backbone VP; log_s + log_T[N,2] (2N+1 params)
@@ -20,7 +20,7 @@ Five parameterisation variants (flags at top of file):
 
 VP methods for backbone components:
   RMSNorm : streamlined or mvp (controlled by RMS_NORM_METHOD)
-  SwiGLU  : delta (linearisation) approximation
+  SwiGLU  : Hermite k=3 (SiLU≈GELU rescaling) + exact product var + cross-covariance
   Attention: VALUE_ONLY — attention pattern deterministic, V uncertain
 
 Grad-checkpointing (USE_GRAD_CHECKPOINT) halves the memory footprint of
@@ -51,13 +51,13 @@ from datasets import load_dataset
 from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
 from transformers import (
-    AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig,
+    AutoModelForCausalLM, AutoTokenizer,
     DataCollatorWithPadding, default_data_collator,
 )
 from transformers.models.llama.modeling_llama import (
     LlamaRMSNorm, apply_rotary_pos_emb, create_causal_mask,
 )
-from peft import PeftModel, PeftConfig, prepare_model_for_kbit_training
+from peft import PeftModel, PeftConfig
 
 import importlib.util
 import types
@@ -103,21 +103,23 @@ logger = get_logger(__name__)
 # CONFIGURATION
 # ══════════════════════════════════════════════════════════════════════════════
 LR               = 3e-2   # learning rate for all calibration parameters
+INIT_LOG_S       = None   # if set, skip phase-1 and use this value directly (e.g. -0.63)
 FINETUNE_S       = False  # True → backbone variants optimize log_s at LR_S_FINETUNE; False → freeze it
 LR_S_FINETUNE    = 1e-3   # LR for log_s in backbone variant phase (only used if FINETUNE_S=True)
-N_EPOCHS         = 20     # calibration epochs
+N_EPOCHS         = 50     # calibration epochs
 CALIB_BATCH_SIZE = 16     # micro-batch size per gradient step
 GRAD_ACCUM       = 16     # accumulate this many micro-batches per optimizer step
 N_MC_CALIB       = 100    # MC samples for calibration NLL
 N_MC_EVAL        = 1000   # MC samples for final evaluation
-RMS_NORM_METHOD = "mvp"  # "streamlined" or "mvp"
+RMS_NORM_METHOD  = "mvp"    # "streamlined" or "mvp"
+SWIGLU_METHOD    = "exact"  # "delta" or "exact" (Hermite k=3 + product var + cross-cov)
 USE_GRAD_CHECKPOINT = True   # recompute sub-block activations during backward
 
 # Which variants to run (flip flags to activate)
-RUN_LAST_LAYER          = True   # backbone MAP, VP at LM head only; log_s
-RUN_GLOBAL              = True  # full backbone VP; log_s + global T
-RUN_PER_LAYER           = True  # full backbone VP; log_s + T per layer
-RUN_PER_SUB_BLOCK       = True  # full backbone VP; log_s + T per (attn,MLP)
+RUN_LOG_S_ONLY          = False   # full backbone VP, no T scaling; log_s only (phase-1)
+RUN_GLOBAL              = False  # full backbone VP; log_s + global T
+RUN_PER_LAYER           = False  # full backbone VP; log_s + T per layer
+RUN_PER_SUB_BLOCK       = False  # full backbone VP; log_s + T per (attn,MLP)
 RUN_PER_SUB_BLOCK_LOGIT = True  # above + T on final logits
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -143,17 +145,24 @@ def parse_args():
     p.add_argument("--lora_alpha",          type=int,   default=16)
     p.add_argument("--lora_dropout",        type=float, default=0.1)
     p.add_argument("--laplace_hessian",     type=str,   default="kron")
-    p.add_argument("--laplace_sub",         type=str,   default="last_layer")
+    p.add_argument("--laplace_sub",         type=str,   default="log_s_only")
     p.add_argument("--laplace_prior",       type=str,   default="homo")
     p.add_argument("--laplace_optim_step",  type=int,   default=100)
     p.add_argument("--testing_set",         type=str,   default="val")
     p.add_argument("--lm_head",             action="store_true", default=True)
+    p.add_argument("--swiglu_method",       type=str,   default=SWIGLU_METHOD,
+                        choices=["delta", "exact"],
+                        help="SwiGLU VP: 'delta' = first-order linearisation; "
+                             "'exact' = Hermite k=3 + product var + cross-cov")
     p.add_argument("--rms_norm_method",     type=str,   default=RMS_NORM_METHOD,
                    choices=["streamlined", "mvp"])
     p.add_argument("--n_epochs",             type=int,   default=N_EPOCHS)
+    p.add_argument("--total_steps",          type=int,   default=None,
+                   help="If set, overrides --n_epochs: n_epochs = ceil(total_steps / steps_per_epoch)")
     p.add_argument("--calib_batch_size",    type=int,   default=CALIB_BATCH_SIZE)
     p.add_argument("--grad_accum",          type=int,   default=GRAD_ACCUM)
     p.add_argument("--lr",                  type=float, default=LR)
+    p.add_argument("--init_log_s",          type=float, default=INIT_LOG_S)
     p.add_argument("--finetune_s",          action="store_true", default=FINETUNE_S)
     p.add_argument("--lr_s_finetune",       type=float, default=LR_S_FINETUNE)
     p.add_argument("--n_mc_calib",          type=int,   default=N_MC_CALIB)
@@ -248,45 +257,52 @@ def extract_param_variances(
 # VP utility functions
 # ---------------------------------------------------------------------------
 
-def vp_rms_norm_streamlined(x: ParamPair, norm: LlamaRMSNorm) -> ParamPair:
-    """Streamlined VP through RMSNorm — scale from point estimate rms(m).
+def make_eager_causal_mask(
+    B: int, S: int, attention_mask, device, dtype=torch.float32
+) -> torch.Tensor:
+    """Build a [B, 1, S, S] additive causal attention bias for eager attention.
 
-    Variance formula is the RMSNorm analog of the LayerNorm streamlined formula:
-        scale  = rsqrt(mean(m²) + ε)
-        Var_out_i = scale² * w_i² * ((1 − 2/D) * v_i + v_mean/D)
+    Returns 0 for positions a query may attend to and -inf for masked
+    positions.  Incorporates both the causal constraint (no future tokens)
+    and the padding mask (attention_mask=0 tokens are masked as keys).
     """
-    m, v = x.mean.float(), x.var.float()
-    D    = m.shape[-1]
-    ms   = (m ** 2).mean(dim=-1, keepdim=True)
-    scale = torch.rsqrt(ms + norm.variance_epsilon)
+    # Causal upper-triangular mask: -inf above the diagonal
+    mask = torch.full((S, S), float("-inf"), device=device, dtype=dtype)
+    mask = torch.triu(mask, diagonal=1)           # [S, S]
+    mask = mask.unsqueeze(0).unsqueeze(0)         # [1, 1, S, S]
+    mask = mask.expand(B, 1, S, S).clone()
 
-    v_mean  = v.mean(dim=-1, keepdim=True)
-    var_pre = scale ** 2 * ((1 - 2 / D) * v + v_mean / D)
+    # Padding mask: mask keys (dim -1) where attention_mask = 0
+    if attention_mask is not None:
+        pad = (attention_mask == 0)               # [B, S], True = padding
+        mask.masked_fill_(pad.unsqueeze(1).unsqueeze(2), float("-inf"))
+
+    return mask
+
+
+def vp_rms_norm_streamlined(x: ParamPair, norm: LlamaRMSNorm) -> ParamPair:
+    m, v  = x.mean, x.var
+    ms    = m.float().pow(2).mean(dim=-1, keepdim=True)
+    scale = torch.rsqrt(ms + norm.variance_epsilon)  # float32
+    # Match LlamaRMSNorm exactly: multiply in float32, cast THEN apply weight in input dtype.
+    w = norm.weight.to(m.dtype)
     return ParamPair(
-        scale * m * norm.weight.float(),
-        var_pre * norm.weight.float() ** 2,
+        (m.float() * scale).to(m.dtype) * w,
+        (scale * scale * v.float() * w.float() ** 2).to(v.dtype),
     )
 
 
 def vp_rms_norm_mvp(x: ParamPair, norm: LlamaRMSNorm) -> ParamPair:
-    """MVP VP through RMSNorm — scale from E[rms²] = mean(m²) + v_mean.
-
-    Accounts for the input variance in the normalisation denominator:
-        E[rms²] = E[mean(x²)] = mean(m²) + mean(v)
-        scale   = rsqrt(E[rms²] + ε)
-    """
-    m, v   = x.mean.float(), x.var.float()
-    D      = m.shape[-1]
-    ms     = (m ** 2).mean(dim=-1, keepdim=True)
-    v_mean = v.mean(dim=-1, keepdim=True)
-    scale  = torch.rsqrt(ms + v_mean + norm.variance_epsilon)
-
-    var_pre = scale ** 2 * ((1 - 2 / D) * v + v_mean / D)
+    m, v   = x.mean, x.var
+    ms     = m.float().pow(2).mean(dim=-1, keepdim=True)
+    v_mean = v.float().mean(dim=-1, keepdim=True)
+    scale  = torch.rsqrt((ms + v_mean).clamp(min=0) + norm.variance_epsilon)
+    # Match LlamaRMSNorm exactly: multiply in float32, cast THEN apply weight in input dtype.
+    w = norm.weight.to(m.dtype)
     return ParamPair(
-        scale * m * norm.weight.float(),
-        var_pre * norm.weight.float() ** 2,
+        (m.float() * scale).to(m.dtype) * w,
+        (scale * scale * v.float() * w.float() ** 2).to(v.dtype),
     )
-
 
 def vp_linear(x: ParamPair, weight: torch.Tensor, bias=None) -> ParamPair:
     """Standard VP through a deterministic linear layer."""
@@ -296,20 +312,66 @@ def vp_linear(x: ParamPair, weight: torch.Tensor, bias=None) -> ParamPair:
     )
 
 
-def vp_swiglu(gate: ParamPair, up: ParamPair) -> ParamPair:
-    """Delta approximation for SwiGLU = SiLU(gate) * up.
+# ── SiLU ≈ GELU rescaling for Hermite variance expansion ──────────────────────
+# σ(x) ≈ Φ(c·x), so SiLU(x) = x·σ(x) ≈ GELU(c·x)/c  where c = √(π/8).
+# For gate ~ N(μ_g, var_g): c·gate ~ N(c·μ_g, c²·var_g).
+# GELU Hermite moments of c·gate, divided by c (or c²), give SiLU moments.
 
-        E[y_j]   ≈ SiLU(μ_g_j) * μ_u_j
-        Var[y_j] ≈ (SiLU'(μ_g_j) * μ_u_j)² * Var[g_j]
-                 +  SiLU(μ_g_j)²             * Var[u_j]
-    """
-    silu_mu  = F.silu(gate.mean)
-    sigmoid_g = torch.sigmoid(gate.mean)
-    dsilu    = sigmoid_g * (1.0 + gate.mean * (1.0 - sigmoid_g))
+_C_SILU_GELU  = math.sqrt(math.pi / 8.0)
+_INV_SQRT_2PI = 1.0 / math.sqrt(2.0 * math.pi)
+
+
+def _npdf(x: torch.Tensor) -> torch.Tensor:
+    return torch.exp(-0.5 * x * x) * _INV_SQRT_2PI
+
+
+def _gelu_moments_k3(m: torch.Tensor, v: torch.Tensor):
+    """(E[GELU(y)], Var[GELU(y)]) for y ~ N(m, v) via Hermite order-3 expansion."""
+    zeta  = torch.rsqrt(1.0 + v)
+    m_out = m * torch.special.ndtr(m * zeta) + v * zeta * _npdf(m * zeta)
+    sigma = v.sqrt()
+    gamma = (m * zeta).clamp(-20.0, 20.0)
+    alpha = sigma * zeta
+    phig  = _npdf(gamma)
+    v_out = (sigma * torch.special.ndtr(gamma) + alpha * (1.0 - alpha**2) * m * phig) ** 2
+    pre   = (sigma * phig) ** 2
+    herm  = [torch.special.hermite_polynomial_he(gamma, i) for i in range(4)]
+    for i in range(2, 4):
+        v_out += pre * (alpha**(i-1) * (herm[i-2] - (1.0 - alpha**2) * herm[i])) ** 2 / math.factorial(i)
+    return m_out, v_out
+
+
+def _vp_swiglu_delta(gate: ParamPair, up: ParamPair, _cov_gu) -> ParamPair:
+    """First-order delta method (original implementation, no cross-covariance)."""
+    silu_m  = F.silu(gate.mean)
+    sg      = torch.sigmoid(gate.mean)
+    df      = sg * (1.0 + gate.mean * (1.0 - sg))
     return ParamPair(
-        silu_mu * up.mean,
-        (dsilu * up.mean) ** 2 * gate.var + silu_mu ** 2 * up.var,
+        silu_m * up.mean,
+        (df * up.mean) ** 2 * gate.var + silu_m ** 2 * up.var,
     )
+
+
+def _vp_swiglu_exact(gate: ParamPair, up: ParamPair, cov_gu: torch.Tensor) -> ParamPair:
+    """SwiGLU VP: SiLU moments via GELU Hermite k=3 + exact product var + cross-cov.
+
+    SiLU(gate) ≈ GELU(_C·gate)/_C gives better E[SiLU] and Var[SiLU].
+    Exact product-variance: Var[SiLU·up] = Var[SiLU]·Var[up] + Var[SiLU]·μ_up²
+                                          + E[SiLU]²·Var[up] + 2·Cov[SiLU,up]·E[SiLU]·μ_up.
+    Cross-cov (first-order Stein): Cov[SiLU(gate_j), up_j] ≈ f'(μ_g_j)·cov_gu_j.
+    """
+    c      = _C_SILU_GELU
+    gm, gv = _gelu_moments_k3(c * gate.mean, c**2 * gate.var)
+    silu_m = gm / c
+    silu_v = gv / c**2
+    sg     = torch.sigmoid(gate.mean)
+    df     = sg * (1.0 + gate.mean * (1.0 - sg))
+    mean   = silu_m * up.mean + df * cov_gu
+    var    = (silu_v * up.var
+              + silu_v * up.mean**2
+              + silu_m**2 * up.var
+              + 2.0 * df * cov_gu * silu_m * up.mean)
+    return ParamPair(mean, var)
 
 
 # ---------------------------------------------------------------------------
@@ -338,9 +400,14 @@ class VPLlamaAttention(nn.Module):
         super().__init__()
         self.register_buffer("k_weight", k_weight)
         self.register_buffer("o_weight", o_weight)
-        # Precompute Q effective weight (base + LoRA mean); used under no_grad
-        W_q_eff = q_mvp.base_weight + q_mvp.scaling * (q_mvp.lora_B_mean @ q_mvp.lora_A_mean)
-        self.register_buffer("q_eff_weight", W_q_eff)
+        # Store Q LoRA buffers for two-step computation matching PEFT:
+        #   q = W_base @ x + scaling * B @ (A @ x)
+        # Precomputing W_q_eff = W_base + s*B@A in bfloat16 accumulates ~O(24) error
+        # (7 mantissa bits × r=8 outer-product terms over hidden_dim=4096).
+        self.register_buffer("q_base_weight",  q_mvp.base_weight)
+        self.register_buffer("q_lora_A_mean",  q_mvp.lora_A_mean)
+        self.register_buffer("q_lora_B_mean",  q_mvp.lora_B_mean)
+        self.q_lora_scaling = q_mvp.scaling
         self.v_mvp  = v_mvp
         self.n_heads = n_heads
         self.head_dim = head_dim
@@ -352,13 +419,17 @@ class VPLlamaAttention(nn.Module):
 
         with torch.no_grad():
             # Q and K don't depend on var_scale — compute under no_grad to save memory
-            q = F.linear(x.mean, self.q_eff_weight).view(B, S, self.n_heads, self.head_dim).transpose(1, 2)
+            # Two-step Q matching PEFT: W_base @ x + scaling * B @ (A @ x)
+            q = (F.linear(x.mean, self.q_base_weight)
+                 + self.q_lora_scaling * F.linear(F.linear(x.mean, self.q_lora_A_mean), self.q_lora_B_mean)
+                 ).view(B, S, self.n_heads, self.head_dim).transpose(1, 2)
             k = F.linear(x.mean, self.k_weight).view(B, S, self.n_heads, self.head_dim).transpose(1, 2)
             q, k = apply_rotary_pos_emb(q, k, cos, sin)
             scores = torch.matmul(q, k.transpose(-2, -1)) * self.scaling
             if attn_mask is not None:
                 scores = scores + attn_mask
             attn_w = F.softmax(scores.float(), dim=-1).to(x.mean.dtype)  # [B, n, S, S]
+            attn_w = torch.nan_to_num(attn_w, nan=0.0)  # pad queries: all-masked → 0 not NaN
 
         # V: uncertain — gradients flow through var_scale here
         v_pair = self.v_mvp(x, var_scale=var_scale)
@@ -373,19 +444,23 @@ class VPLlamaAttention(nn.Module):
 class VPLlamaMLP(nn.Module):
     """VP through LlamaMLP (SwiGLU) — all projections deterministic (no LoRA).
 
-    Uncertain input propagates through:  gate/up (linear VP) → SwiGLU (delta) → down (linear VP).
+    Uncertain input propagates through:  gate/up (linear VP) → SwiGLU → down (linear VP).
+    swiglu_method: "delta" = first-order linearisation; "exact" = Hermite k=3 + product var + cross-cov.
     """
 
-    def __init__(self, gate_weight: torch.Tensor, up_weight: torch.Tensor, down_weight: torch.Tensor):
+    def __init__(self, gate_weight: torch.Tensor, up_weight: torch.Tensor,
+                 down_weight: torch.Tensor, swiglu_method: str = "exact"):
         super().__init__()
         self.register_buffer("gate_weight", gate_weight)
         self.register_buffer("up_weight",   up_weight)
         self.register_buffer("down_weight", down_weight)
+        self._swiglu_fn = _vp_swiglu_exact if swiglu_method == "exact" else _vp_swiglu_delta
 
     def forward(self, x: ParamPair) -> ParamPair:
-        return vp_linear(vp_swiglu(vp_linear(x, self.gate_weight),
-                                   vp_linear(x, self.up_weight)),
-                         self.down_weight)
+        gate   = vp_linear(x, self.gate_weight)
+        up     = vp_linear(x, self.up_weight)
+        cov_gu = x.var @ (self.gate_weight * self.up_weight).T
+        return vp_linear(self._swiglu_fn(gate, up, cov_gu), self.down_weight)
 
 
 class VPLlamaDecoderLayer(nn.Module):
@@ -459,17 +534,13 @@ class VPBackbone(nn.Module):
         T_attn: torch.Tensor | None = None,   # [N_layers] or None
         T_mlp:  torch.Tensor | None = None,   # [N_layers] or None
     ) -> ParamPair:
-        inputs_embeds = self.llama.embed_tokens(input_ids).float()
+        inputs_embeds = self.llama.embed_tokens(input_ids)
         B, S, _ = inputs_embeds.shape
 
         position_ids  = torch.arange(S, device=inputs_embeds.device).unsqueeze(0)
-        causal_mask   = create_causal_mask(
-            config=self.llama.config,
-            inputs_embeds=inputs_embeds,
-            attention_mask=attention_mask,
-            past_key_values=None,
-            position_ids=position_ids,
-        )
+        causal_mask   = make_eager_causal_mask(B, S, attention_mask,
+                                               device=inputs_embeds.device,
+                                               dtype=inputs_embeds.dtype)
         cos, sin = self.llama.rotary_emb(inputs_embeds, position_ids=position_ids)
 
         x = ParamPair(inputs_embeds, torch.zeros_like(inputs_embeds))
@@ -499,7 +570,13 @@ class VPBackbone(nn.Module):
         return self.rms_norm_fn(x, self.final_norm)
 
 
-def build_vp_backbone(backbone, param_variances: dict, rms_norm_method: str = "mvp") -> VPBackbone:
+def _get_weight_f32(module) -> torch.Tensor:
+    return module.weight.float().detach()
+
+
+def build_vp_backbone(backbone, param_variances: dict,
+                      rms_norm_method: str = "mvp",
+                      swiglu_method: str = "exact") -> VPBackbone:
     """Construct VPBackbone from LlamaModel + KFAC per-element variances.
 
     Layers whose LoRA variances are absent in param_variances get zero-variance
@@ -521,10 +598,10 @@ def build_vp_backbone(backbone, param_variances: dict, rms_norm_method: str = "m
         pfx   = f"layers.{layer_idx}.self_attn.{proj_name}"
         A_mean = lora_layer.lora_A["default"].weight.float().detach()
         B_mean = lora_layer.lora_B["default"].weight.float().detach()
-        _av = find_var(f"{pfx}.lora_A"); A_var = _av if _av is not None else torch.zeros_like(A_mean)
-        _bv = find_var(f"{pfx}.lora_B"); B_var = _bv if _bv is not None else torch.zeros_like(B_mean)
+        _av = find_var(f"{pfx}.lora_A"); A_var = _av if _av is not None else torch.zeros(A_mean.shape, dtype=torch.float32, device=A_mean.device)
+        _bv = find_var(f"{pfx}.lora_B"); B_var = _bv if _bv is not None else torch.zeros(B_mean.shape, dtype=torch.float32, device=B_mean.device)
         return LoRALinearMVP(
-            base_weight=lora_layer.base_layer.weight.float().detach(),
+            base_weight=_get_weight_f32(lora_layer.base_layer),
             lora_A_mean=A_mean, lora_B_mean=B_mean,
             lora_A_var=A_var,   lora_B_var=B_var,
             scaling=lora_layer.scaling["default"],
@@ -533,16 +610,17 @@ def build_vp_backbone(backbone, param_variances: dict, rms_norm_method: str = "m
     vp_decoder_layers = []
     for i, layer in enumerate(backbone.layers):
         vp_attn = VPLlamaAttention(
-            k_weight=layer.self_attn.k_proj.weight.float().detach(),
-            o_weight=layer.self_attn.o_proj.weight.float().detach(),
+            k_weight=_get_weight_f32(layer.self_attn.k_proj),
+            o_weight=_get_weight_f32(layer.self_attn.o_proj),
             q_mvp=make_mvp(layer.self_attn.q_proj, i, "q_proj"),
             v_mvp=make_mvp(layer.self_attn.v_proj, i, "v_proj"),
             n_heads=n_heads, head_dim=head_dim, scaling=scaling,
         )
         vp_mlp = VPLlamaMLP(
-            gate_weight=layer.mlp.gate_proj.weight.float().detach(),
-            up_weight=layer.mlp.up_proj.weight.float().detach(),
-            down_weight=layer.mlp.down_proj.weight.float().detach(),
+            gate_weight=_get_weight_f32(layer.mlp.gate_proj),
+            up_weight=_get_weight_f32(layer.mlp.up_proj),
+            down_weight=_get_weight_f32(layer.mlp.down_proj),
+            swiglu_method=swiglu_method,
         )
         vp_decoder_layers.append(VPLlamaDecoderLayer(
             input_norm=layer.input_layernorm,
@@ -580,23 +658,24 @@ class VPLMHead(nn.Module):
 # Calibration model classes
 # ---------------------------------------------------------------------------
 
-class VPCalibLastLayer(nn.Module):
-    """Backbone runs deterministically (MAP).  VP only at LM head.
+class VPCalibLogSOnly(nn.Module):
+    """Full backbone VP with no temperature scaling.  Only log_s is learned.
+    Phase-1 role: identify the global posterior scale across all LoRA layers.
     Learnable: log_s (1 param).
     """
 
-    def __init__(self, det_backbone, vp_head: VPLMHead):
+    def __init__(self, vp_backbone, vp_head: VPLMHead):
         super().__init__()
-        self.det_backbone = det_backbone
-        self.vp_head      = vp_head
-        self.log_s        = nn.Parameter(torch.zeros(1))
+        self.vp_backbone = vp_backbone
+        self.vp_head     = vp_head
+        self.log_s       = nn.Parameter(torch.zeros(1))
 
     def forward(self, input_ids, attention_mask) -> ParamPair:
-        with torch.no_grad():
-            hidden = self.det_backbone(
-                input_ids=input_ids, attention_mask=attention_mask,
-            ).last_hidden_state[:, -1, :].float()
-        return self.vp_head(hidden, var_scale=self.log_s.exp())
+        vs = self.log_s.exp()
+        hidden = self.vp_backbone(input_ids, attention_mask, var_scale=vs,
+                                   T_attn=None, T_mlp=None)
+        h = ParamPair(hidden.mean[:, -1, :], hidden.var[:, -1, :])
+        return self.vp_head(h, var_scale=vs)
 
     @property
     def n_calib_params(self): return 1
@@ -617,7 +696,6 @@ class VPCalibGlobal(nn.Module):
     def forward(self, input_ids, attention_mask) -> ParamPair:
         vs = self.log_s.exp()
         T  = self.log_T.exp()
-        # Same T applied to both attn and MLP → same as per-layer with shared T
         N  = len(self.vp_backbone.vp_layers)
         T_vec = T.expand(N)
         hidden = self.vp_backbone(input_ids, attention_mask, var_scale=vs,
@@ -645,7 +723,7 @@ class VPCalibPerLayer(nn.Module):
 
     def forward(self, input_ids, attention_mask) -> ParamPair:
         vs = self.log_s.exp()
-        T  = self.log_T.exp()          # [N]
+        T  = self.log_T.exp()  # [N]
         # T applied only after MLP (= full layer output); attn runs unscaled
         hidden = self.vp_backbone(input_ids, attention_mask, var_scale=vs,
                                    T_attn=None, T_mlp=T)
@@ -671,7 +749,7 @@ class VPCalibPerSubBlock(nn.Module):
 
     def forward(self, input_ids, attention_mask) -> ParamPair:
         vs = self.log_s.exp()
-        T  = self.log_T.exp()          # [N, 2]
+        T  = self.log_T.exp()  # [N, 2]
         hidden = self.vp_backbone(input_ids, attention_mask, var_scale=vs,
                                    T_attn=T[:, 0], T_mlp=T[:, 1])
         h = ParamPair(hidden.mean[:, -1, :], hidden.var[:, -1, :])
@@ -715,10 +793,11 @@ class VPCalibPerSubBlockLogit(nn.Module):
 
 def mc_probs(logit_pair: ParamPair, n_samples: int) -> torch.Tensor:
     """MC estimate of E[softmax(z)], z ~ N(mu, diag(sigma²))."""
-    sigma = logit_pair.var.clamp(min=0).sqrt()
+    # Use float32 for sigma: bfloat16 overflow → inf, then inf*0=NaN when eps≈0
+    sigma = logit_pair.var.float().clamp(min=0).sqrt()
     eps   = torch.randn(n_samples, *logit_pair.mean.shape,
-                        device=logit_pair.mean.device, dtype=logit_pair.mean.dtype)
-    return F.softmax(logit_pair.mean.unsqueeze(0) + sigma.unsqueeze(0) * eps, dim=-1).mean(0)
+                        device=logit_pair.mean.device, dtype=torch.float32)
+    return F.softmax(logit_pair.mean.float().unsqueeze(0) + sigma.unsqueeze(0) * eps, dim=-1).mean(0)
 
 
 def nll_batch(model: nn.Module, batch: dict, device, n_mc: int) -> torch.Tensor:
@@ -750,8 +829,6 @@ def evaluate_vp(model: nn.Module, dataloader, device, n_mc: int) -> tuple[dict, 
 
 # ---------------------------------------------------------------------------
 # Calibration loop
-# ---------------------------------------------------------------------------
-
 def run_variant(
     model: nn.Module,
     calib_loader,
@@ -766,11 +843,15 @@ def run_variant(
     """Calibrate one variant and return its results.
 
     lr_s controls the log_s learning rate for this variant.  Pass None to use
-    args.lr (the default for last_layer).  For backbone variants called after
-    last_layer, main sets lr_s=args.lr_s_finetune when FINETUNE_S=True, or
+    args.lr (the default for log_s_only).  For backbone variants called after
+    log_s_only, main sets lr_s=args.lr_s_finetune when FINETUNE_S=True, or
     freezes log_s (requires_grad=False) and passes lr_s=None when False.
     """
     accelerator.print(f"\n--- Variant: {variant_name} ({model.n_calib_params} params) ---")
+
+    if variant_name == "log_s_only":
+        model.log_s.data.fill_(-5.0)
+        accelerator.print(f"  initialising log_s = -5.0")
 
     lr_s = lr_s if lr_s is not None else args.lr
 
@@ -783,7 +864,7 @@ def run_variant(
     param_groups.append({"params": log_t_params, "lr": args.lr})
     optimizer = torch.optim.Adam(param_groups)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, mode="min", factor=0.5, patience=1,
+        optimizer, mode="min", factor=0.5, patience=4,
         min_lr=min(lr_s, args.lr) * 1e-2,
     )
 
@@ -795,16 +876,49 @@ def run_variant(
         optimizer.zero_grad()
         epoch_loss_sum, epoch_steps = 0.0, 0
 
+        n_batches = len(calib_loader)
+        log_window_sum, log_window_steps = 0.0, 0
         for batch_idx, batch in enumerate(calib_loader):
+            last_batch   = (batch_idx == n_batches - 1)
+            window_start = (batch_idx // args.grad_accum) * args.grad_accum
+            window_size  = min(args.grad_accum, n_batches - window_start)
+
             loss = nll_batch(model, batch, device, args.n_mc_calib)
-            (loss / args.grad_accum).backward()
+            (loss / window_size).backward()
             epoch_loss_sum += loss.item()
             epoch_steps += 1
+            log_window_sum += loss.item()
+            log_window_steps += 1
 
-            last_batch = (batch_idx == len(calib_loader) - 1)
             if (batch_idx + 1) % args.grad_accum == 0 or last_batch:
+                all_params = [p for g in optimizer.param_groups for p in g["params"]]
+                # Replace NaN/Inf gradients with zero before clipping
+                for p in all_params:
+                    if p.grad is not None:
+                        p.grad.nan_to_num_(nan=0.0, posinf=0.0, neginf=0.0)
+                torch.nn.utils.clip_grad_norm_(all_params, max_norm=10.0)
+                # Extra value clipping for calibration parameters (leaf tensors only)
+                _calib_params = [model.log_s]
+                if hasattr(model, "log_T"):
+                    _calib_params.append(model.log_T)
+                if hasattr(model, "log_T_logit"):
+                    _calib_params.append(model.log_T_logit)
+                for p in _calib_params:
+                    if p.grad is not None:
+                        p.grad.clamp_(-10.0, 10.0)
                 optimizer.step()
                 optimizer.zero_grad()
+
+            if (batch_idx + 1) % 10 == 0 or last_batch:
+                _s_now = model.log_s.item()
+                _t_now = (f"{model.log_T.mean().item():.4f}"
+                          if hasattr(model, "log_T") and model.log_T.numel() > 0 else "N/A")
+                accelerator.print(
+                    f"    batch {batch_idx+1:4d}/{n_batches}  "
+                    f"nll(last 10)={log_window_sum / log_window_steps:.4f}  "
+                    f"log_s={_s_now:.4f}  mean(log_T)={_t_now}"
+                )
+                log_window_sum, log_window_steps = 0.0, 0
 
         epoch_nll = epoch_loss_sum / epoch_steps
         scheduler.step(epoch_nll)
@@ -850,6 +964,7 @@ def run_variant(
     # Collect learnable scalars for logging
     scalars = {"log_s": model.log_s.item(), "s": model.log_s.exp().item()}
     if hasattr(model, "log_T"):
+        scalars["log_T"]      = model.log_T.tolist()
         scalars["log_T_mean"] = model.log_T.mean().item()
         scalars["log_T_std"]  = model.log_T.std().item()
     if hasattr(model, "log_T_logit"):
@@ -940,6 +1055,29 @@ def main():
         tokenizer.add_eos_token = True
 
     # ── tokenise ─────────────────────────────────────────────────────────────
+    # ARC and openbookqa: filter to 4-choice questions and normalise choice text
+    # to match the training distribution in run_gpt.py exactly.
+    if "ARC" in args.task_name or "openbookqa" in args.task_name:
+        raw_datasets = raw_datasets.filter(lambda ex: len(ex["choices"]["label"]) == 4)
+        # run_gpt.py applies convert_choices_to_alpha: numeric labels → alphabetical,
+        # trailing period on choice text, capitalize first letter.  The model was
+        # TRAINED on this reformatted text, so we must apply the same transformation
+        # at eval time to match the training distribution.
+        def _convert_arc_choices(example):
+            mapping = {'1': 'A', '2': 'B', '3': 'C', '4': 'D'}
+            example['choices']['label'] = [mapping.get(l, l) for l in example['choices']['label']]
+            example['answerKey'] = mapping.get(example['answerKey'], example['answerKey'])
+            example['choices']['text'] = [
+                (t if t.endswith('.') else t + '.') for t in example['choices']['text']
+            ]
+            example['choices']['text'] = [
+                (t[0].upper() + t[1:] if t else t) for t in example['choices']['text']
+            ]
+            return example
+        with accelerator.main_process_first():
+            for split in raw_datasets:
+                raw_datasets[split] = raw_datasets[split].map(_convert_arc_choices)
+
     padding = "max_length" if args.pad_to_max_length else False
     with accelerator.main_process_first():
         processed = raw_datasets.map(
@@ -967,6 +1105,7 @@ def main():
         default_data_collator if args.pad_to_max_length
         else DataCollatorWithPadding(tokenizer, pad_to_multiple_of=8)
     )
+    val_dataset  = val_dataset.shuffle(seed=42)
     calib_loader = DataLoader(val_dataset,   shuffle=False, collate_fn=data_collator,
                               batch_size=args.calib_batch_size)
     val_loader   = DataLoader(val_dataset,   shuffle=False, collate_fn=data_collator,
@@ -979,10 +1118,8 @@ def main():
     peft_config    = PeftConfig.from_pretrained(checkpoint_dir)
     base_model     = AutoModelForCausalLM.from_pretrained(
         peft_config.base_model_name_or_path,
-        quantization_config=BitsAndBytesConfig(load_in_8bit=True),
-        dtype=torch.float16, token=True,
+        torch_dtype=torch.bfloat16, token=True,
     )
-    base_model = prepare_model_for_kbit_training(base_model)
     model      = PeftModel.from_pretrained(base_model, checkpoint_dir)
 
     for name, param in model.named_parameters():
@@ -1030,16 +1167,19 @@ def main():
                     + self.lora_B(self.lora_A(self.lora_dropout(h))) * self.scaling)
 
     original_lm_head = model.base_model.model.lm_head
-    custom_lm_head   = CustomLMHead_lora(original_lm_head).to(device)
-    model.base_model.model.lm_head = custom_lm_head
 
+    model = model.to(device=device, dtype=torch.float32)
     model.eval()
-    # prepare_model_for_kbit_training enables the model's built-in gradient
-    # checkpointing, which produces spurious "None of the inputs have
-    # requires_grad=True" warnings when det_backbone is called under no_grad.
-    # Our VP backbone uses its own grad_checkpoint calls, so disable it here.
     model.gradient_checkpointing_disable()
     calib_loader, val_loader, eval_loader = accelerator.prepare(calib_loader, val_loader, eval_loader)
+
+    if args.total_steps is not None:
+        steps_per_epoch = math.ceil(len(calib_loader) / args.grad_accum)
+        args.n_epochs   = math.ceil(args.total_steps / steps_per_epoch)
+        accelerator.print(f"  total_steps={args.total_steps} → steps_per_epoch={steps_per_epoch} → n_epochs={args.n_epochs}")
+
+    custom_lm_head   = CustomLMHead_lora(original_lm_head).to(device)
+    model.base_model.model.lm_head = custom_lm_head
 
     # ── Load KFAC posterior variances from prior Laplace run ──────────────────
     laplace_dir = f"{args.laplace_output_dir}/step_{args.load_step}"
@@ -1096,20 +1236,56 @@ def main():
         )
         run_global = run_per_layer = run_per_sub_block = run_per_sub_block_logit = False
 
-    need_vp_backbone = any([run_global, run_per_layer, run_per_sub_block, run_per_sub_block_logit])
+    need_vp_backbone = any([RUN_LOG_S_ONLY, run_global, run_per_layer, run_per_sub_block, run_per_sub_block_logit])
     if need_vp_backbone:
-        accelerator.print(f"--- Building VPBackbone (rms_norm={args.rms_norm_method}) ---")
-        vp_backbone = build_vp_backbone(backbone, param_variances, args.rms_norm_method).to(device)
+        accelerator.print(f"--- Building VPBackbone (rms_norm={args.rms_norm_method}, swiglu={args.swiglu_method}) ---")
+        vp_backbone = build_vp_backbone(backbone, param_variances,
+                                        args.rms_norm_method, args.swiglu_method).to(device)
         vp_backbone.eval()
     else:
         vp_backbone = None
 
+    # ── init_log_s grid search ────────────────────────────────────────────────
+    # Sweep log_s over [-20, -19.5, ..., 0] (41 points) to find the best
+    # starting point for backbone calibration.  Currently hardcoded to -5.0;
+    # replace `_grid_init_log_s = -5.0` with `_grid_init_log_s = _best_gs`
+    # to enable automatic selection.
+    if need_vp_backbone:
+        accelerator.print(f"\n--- init_log_s grid search (41 points: -20.0 .. 0.0) ---")
+        _gs_model = VPCalibLogSOnly(vp_backbone, vp_head).to(device)
+        _gs_model.eval()
+        _log_s_grid = [round(-20.0 + i * 0.5, 1) for i in range(41)]
+        _best_gs, _best_gs_nll = -5.0, float("inf")
+        with torch.no_grad():
+            for _ls in _log_s_grid:
+                _gs_model.log_s.data.fill_(_ls)
+                _ps, _ls_list, _n = [], [], 0
+                for _b in val_loader:
+                    if _n >= 128:
+                        break
+                    _p = mc_probs(_gs_model(_b["input_ids"].to(device),
+                                            _b["attention_mask"].to(device)), 1)
+                    _ps.append(_p.cpu()); _ls_list.append(_b["labels"].cpu())
+                    _n += _p.shape[0]
+                _probs  = torch.cat(_ps)[:128]
+                _labs   = torch.cat(_ls_list)[:128]
+                _nll = -torch.log(_probs.gather(1, _labs.unsqueeze(1)).clamp(min=1e-12)).mean().item()
+                accelerator.print(f"  log_s={_ls:+5.1f} → val_nll={_nll:.4f}")
+                if _nll < _best_gs_nll:
+                    _best_gs_nll, _best_gs = _nll, _ls
+        del _gs_model
+        torch.cuda.empty_cache()
+        accelerator.print(f"  Grid best: log_s={_best_gs:.1f} (val_nll={_best_gs_nll:.4f})")
+        _grid_init_log_s = -5.0  # TODO: replace with _best_gs to enable auto-selection
+        accelerator.print(f"  Selected:  log_s={_grid_init_log_s:.1f} (hardcoded)")
+    else:
+        _grid_init_log_s = -5.0
+
     # ── Run variants ──────────────────────────────────────────────────────────
     all_results = []
-    last_layer_log_s = 0.0  # updated after last_layer variant; used to init backbone variants
 
     variants = [
-        (RUN_LAST_LAYER,          "last_layer",           lambda: VPCalibLastLayer(backbone, vp_head)),
+        (RUN_LOG_S_ONLY,          "log_s_only",           lambda: VPCalibLogSOnly(vp_backbone, vp_head)),
         (run_global,              "global",               lambda: VPCalibGlobal(vp_backbone, vp_head)),
         (run_per_layer,           "per_layer",            lambda: VPCalibPerLayer(vp_backbone, vp_head)),
         (run_per_sub_block,       "per_sub_block",        lambda: VPCalibPerSubBlock(vp_backbone, vp_head)),
@@ -1119,11 +1295,13 @@ def main():
     for flag, name, make_model in variants:
         if not flag:
             continue
+        if name == "log_s_only" and args.init_log_s is not None:
+            accelerator.print(f"  Skipping log_s_only fit — using init_log_s={args.init_log_s:.4f} directly")
+            continue
         calib_model = make_model().to(device)
 
-        if name != "last_layer":
-            # Phase 2: initialise log_s from last_layer result, then freeze or finetune.
-            calib_model.log_s.data.fill_(last_layer_log_s)
+        if name != "log_s_only":
+            calib_model.log_s.data.fill_(_grid_init_log_s)
             if args.finetune_s:
                 lr_s = args.lr_s_finetune
             else:
@@ -1133,10 +1311,6 @@ def main():
             lr_s = None  # use default args.lr
 
         result = run_variant(calib_model, calib_loader, val_loader, eval_loader, device, args, name, accelerator, lr_s=lr_s)
-
-        if name == "last_layer":
-            last_layer_log_s = result["scalars"]["log_s"]
-            accelerator.print(f"  log_s* = {last_layer_log_s:.4f} — will initialise backbone variants")
 
         all_results.append(result)
         del calib_model
@@ -1148,7 +1322,7 @@ def main():
 
     base_tag = (
         f"vp_{args.laplace_hessian}_{args.laplace_sub}_{args.laplace_prior}"
-        f"_{args.laplace_optim_step}_rms{args.rms_norm_method}_epochs{args.n_epochs}"
+        f"_{args.laplace_optim_step}_rms{args.rms_norm_method}_swiglu{args.swiglu_method}_epochs{args.n_epochs}"
     )
     results_path = os.path.join(
         f"{args.output_dir}/step_{args.load_step}", f"all_results_{base_tag}.json"

@@ -21,8 +21,8 @@ max_len=300
 for task in "${tasks[@]}"; do
     for seed in "${seeds[@]}"; do
         seed_label="${seed_to_label[$seed]}"
-        for laplace_sub in all last_layer; do
-            for laplace_hessian in kron; do
+        for laplace_sub in all; do
+            for laplace_hessian in diag; do
                 for laplace_prior in homo; do
                     for laplace_optim_step in 100; do
                         for load_step in "${load_steps[@]}"; do

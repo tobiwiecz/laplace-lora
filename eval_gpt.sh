@@ -3,18 +3,19 @@ export TORCHDYNAMO_DISABLE=1
 
 #tasks=(winogrande_s ARC-Challenge ARC-Easy winogrande_m openbookqa boolq)
 #seeds=(21 42 87)
-#steps=(0 999 1999 2999 3999 4999 5999 6999 7999 8999 9999)
+#steps=(4000)
 #splits=(train val test)
 
-tasks=(${TASKS:-winogrande_s})
+tasks=(${TASKS:-ARC-Easy})
 seeds=(${SEEDS:-21})
-steps=(${STEPS:-999})
+steps=(${STEPS:-4000})
 splits=(${SPLITS:-val})
 
-tasks=(winogrande_s)
+tasks=(ARC-Easy)
 seeds=(21)
-steps=(0 999 1999 2999 3999 4999 5999 6999 7999 8999 9999)
-splits=(train val test)
+splits=(val test)
+
+declare -A seed_to_label=([21]=seed1 [42]=seed2 [87]=seed3 [13]=seed4 [100]=seed5)
 
 model=meta-llama/Llama-2-7b-chat-hf
 #model=TinyLlama/TinyLlama-1.1B-Chat-v1.0
@@ -32,13 +33,14 @@ splits_tag="${splits[*]// /_}"
 
 for task in "${tasks[@]}"; do
     for seed in "${seeds[@]}"; do
+        seed_label="${seed_to_label[$seed]}"
         for step in "${steps[@]}"; do
-            checkpoint_dir="outputs/${task}/${model}_${peft_method}_${lora_alpha}_${lora_dropout}_${lr}_${seed}/step_${step}"
+            checkpoint_dir="outputs/${task}/${model}_${peft_method}_${lora_alpha}_${lora_dropout}_${lr}_${seed_label}/step_${step}"
 
             model_tag="${model//\//__}"
             log_dir="logs/${model_tag}/${task}"
             mkdir -p "$log_dir"
-            log_file="${log_dir}/eval_seed${seed}_step${step}_splits${splits_tag}_maxlen${max_len}.log"
+            log_file="${log_dir}/eval_${seed_label}_step${step}_splits${splits_tag}_maxlen${max_len}.log"
 
             echo "Evaluating $model on task $task | seed=$seed step=$step splits=${splits[*]}"
             accelerate launch --num_processes 1 eval_gpt.py \
