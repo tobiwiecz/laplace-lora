@@ -1,6 +1,7 @@
 import argparse
 import json
 import logging
+import math
 import os
 import random
 import warnings
@@ -88,6 +89,13 @@ def parse_args():
     parser.add_argument("--sampling_method", type=str, default='kron', choices=['kron', 'diag'],
                         help="'kron': full Kron posterior sampling respecting within-layer correlations. "
                              "'diag': diagonal marginal variances extracted from Kron posterior, independent per parameter.")
+    parser.add_argument("--eval_on_test", action="store_true",
+                        help="Also evaluate on the test half (second half of validation split).")
+    parser.add_argument("--results_dir", type=str, default=None,
+                        help="If set, save per-k JSON files to results_dir/{task}/{seed_label}/mc_{method}_{k}.json.")
+    parser.add_argument("--posterior_scale", type=float, default=1.0,
+                        help="Scale posterior variance by this factor (e.g. 0.1 = 10%% of original). "
+                             "Perturbations are multiplied by sqrt(posterior_scale).")
     args = parser.parse_args()
 
     peft_method = 'lora'
@@ -255,10 +263,29 @@ def main(load_step):
 
     processed_dataset = processed_datasets["validation_matched" if args.task_name == "mnli" else "validation"]
 
+    # Tasks whose public test labels are unavailable: split validation 50/50.
+    _use_val_split = args.task_name == "boolq" or "winogrande" in args.task_name
+
+    if _use_val_split:
+        _halves = processed_dataset.train_test_split(test_size=0.5, seed=42, shuffle=False)
+        _val_half, _test_half = _halves["train"], _halves["test"]
+    else:
+        _val_half = _test_half = None
+
     if args.testing_set == 'test':
         eval_dataset = processed_dataset.train_test_split(test_size=0.5, seed=42, shuffle=False)["test"]
+    elif args.eval_on_test and _use_val_split:
+        eval_dataset = _val_half   # val = first half so there's no overlap with test
     else:
         eval_dataset = processed_dataset
+
+    if args.eval_on_test:
+        if _use_val_split:
+            test_dataset = _test_half
+        else:
+            if "test" not in processed_datasets:
+                raise ValueError(f"--eval_on_test: no 'test' split for task '{args.task_name}'")
+            test_dataset = processed_datasets["test"]
 
     if args.pad_to_max_length:
         data_collator = default_data_collator
@@ -267,6 +294,10 @@ def main(load_step):
 
     eval_dataloader = DataLoader(eval_dataset, shuffle=False, collate_fn=data_collator, batch_size=args.per_device_eval_batch_size)
     map_dataloader = DataLoader(eval_dataset, shuffle=False, collate_fn=data_collator, batch_size=args.per_device_map_batch_size)
+
+    if args.eval_on_test:
+        test_eval_dataloader = DataLoader(test_dataset, shuffle=False, collate_fn=data_collator, batch_size=args.per_device_eval_batch_size)
+        test_map_dataloader = DataLoader(test_dataset, shuffle=False, collate_fn=data_collator, batch_size=args.per_device_map_batch_size)
 
     class CustomLMHead_lora(torch.nn.Module):
         def __init__(self, original_lm_head, id_list):
@@ -327,7 +358,11 @@ def main(load_step):
 
     model = WrappedModel(model)
 
-    model, eval_dataloader, map_dataloader = accelerator.prepare(model, eval_dataloader, map_dataloader)
+    if args.eval_on_test:
+        model, eval_dataloader, map_dataloader, test_eval_dataloader, test_map_dataloader = accelerator.prepare(
+            model, eval_dataloader, map_dataloader, test_eval_dataloader, test_map_dataloader)
+    else:
+        model, eval_dataloader, map_dataloader = accelerator.prepare(model, eval_dataloader, map_dataloader)
     model.eval()
 
     la = Laplace(model, 'classification', prior_precision=1.,
@@ -380,59 +415,66 @@ def main(load_step):
         m['accuracy'] = acc
         return m
 
-    # --- Pass 1: MAP (mean network) — fast, results printed immediately ---
-    accelerator.print('\nRunning MAP evaluation...')
-    all_map_probs = []
-    all_labels = []
+    def _run_eval(eval_dl, map_dl, split_name):
+        """Run MAP + sampling on one split. Returns {'map': metrics, str(k): metrics, ...}."""
+        res = {}
+        _map_probs, _labels = [], []
+        for batch in tqdm(map_dl, desc=f"  MAP [{split_name}]", unit="batch"):
+            _input = {k: v for k, v in batch.items() if k != 'labels'}
+            with torch.no_grad():
+                _map_probs.append(torch.softmax(model(**_input).float(), dim=-1).cpu())
+            _labels.append(batch["labels"].cpu())
+        _map_probs = torch.cat(_map_probs)
+        _labels = torch.cat(_labels)
+        res['map'] = metrics_for(_map_probs, _labels)
 
-    for batch in tqdm(map_dataloader, total=len(map_dataloader), desc="Eval [MAP]", unit="batch"):
-        input_batch = {k: v for k, v in batch.items() if k != 'labels'}
-        with torch.no_grad():
-            map_logits = model(**input_batch)
-            all_map_probs.append(torch.softmax(map_logits.float(), dim=-1).cpu())
-        all_labels.append(batch["labels"].cpu())
+        _sample_probs = []
+        for batch in tqdm(eval_dl, desc=f"  {args.sampling_method} [{split_name}]", unit="batch"):
+            _input = {k: v for k, v in batch.items() if k != 'labels'}
+            with torch.no_grad():
+                if args.sampling_method == 'kron':
+                    wsamples = la.sample(max_samples)
+                else:
+                    wsamples = diagonal_sample(la, max_samples)
+                if args.posterior_scale != 1.0:
+                    _mean = la.mean.unsqueeze(0)
+                    wsamples = _mean + (wsamples - _mean) * math.sqrt(args.posterior_scale)
+                _bsps = []
+                for sw in wsamples:
+                    vector_to_parameters(sw, trainable_params)
+                    _bsps.append(torch.softmax(model(**_input).float(), dim=-1).cpu())
+                vector_to_parameters(la.mean, trainable_params)
+            _sample_probs.append(torch.stack(_bsps, dim=0))
+        _sample_probs = torch.cat(_sample_probs, dim=1)
 
-    all_map_probs = torch.cat(all_map_probs, dim=0)
-    all_labels = torch.cat(all_labels, dim=0)
+        for k in n_samples_list:
+            res[str(k)] = metrics_for(_sample_probs[:k].mean(0), _labels)
+        return res
 
-    all_results = {}
-    all_results['mean'] = metrics_for(all_map_probs, all_labels)
-    accelerator.print(f"  [mean] {all_results['mean']}")
-
-    # --- Pass 2: weight-space sampling ---
-    accelerator.print(f'\nRunning {args.sampling_method} sampling ({max_samples} max samples)...')
-    all_sample_probs = []
-
-    for batch in tqdm(eval_dataloader, total=len(eval_dataloader), desc=f"Eval [{args.sampling_method}]", unit="batch"):
-        input_batch = {k: v for k, v in batch.items() if k != 'labels'}
-
-        with torch.no_grad():
-            if args.sampling_method == 'kron':
-                weight_samples = la.sample(max_samples)
-            else:
-                weight_samples = diagonal_sample(la, max_samples)
-
-            batch_sample_probs = []
-            for sample_w in weight_samples:
-                vector_to_parameters(sample_w, trainable_params)
-                logits = model(**input_batch)
-                batch_sample_probs.append(torch.softmax(logits.float(), dim=-1).cpu())
-
-            vector_to_parameters(la.mean, trainable_params)
-
-        all_sample_probs.append(torch.stack(batch_sample_probs, dim=0))
-
-    # (max_samples, n_test, n_classes)
-    all_sample_probs = torch.cat(all_sample_probs, dim=1)
-
+    accelerator.print('\n[val] Running MAP + sampling...')
+    val_results = _run_eval(eval_dataloader, map_dataloader, 'val')
+    accelerator.print(f"  [map]  {val_results['map']}")
     for k in n_samples_list:
-        avg_probs_k = all_sample_probs[:k].mean(0)
-        key = f'{k}_sample' if k == 1 else f'{k}_samples'
-        all_results[key] = metrics_for(avg_probs_k, all_labels)
+        accelerator.print(f"  [{k:3d}s] {val_results[str(k)]}")
 
-    accelerator.print('Results:')
-    for key, res in all_results.items():
-        accelerator.print(f'  [{key}] {res}')
+    test_results = {}
+    if args.eval_on_test:
+        accelerator.print('\n[test] Running MAP + sampling...')
+        test_results = _run_eval(test_eval_dataloader, test_map_dataloader, 'test')
+        accelerator.print(f"  [map]  {test_results['map']}")
+        for k in n_samples_list:
+            accelerator.print(f"  [{k:3d}s] {test_results[str(k)]}")
+
+    # Backward-compatible flat dict for existing JSON output (val-only)
+    all_results = {'mean': val_results['map']}
+    for k in n_samples_list:
+        key = f'{k}_sample' if k == 1 else f'{k}_samples'
+        all_results[key] = val_results[str(k)]
+    if args.eval_on_test:
+        all_results['test_mean'] = test_results['map']
+        for k in n_samples_list:
+            key = f'test_{k}_sample' if k == 1 else f'test_{k}_samples'
+            all_results[key] = test_results[str(k)]
 
     all_results_path = os.path.join(output_dir, f'all_results_la_{tag}.json')
     if os.path.isfile(all_results_path):
@@ -440,7 +482,19 @@ def main(load_step):
     with open(all_results_path, 'w') as f:
         json.dump(all_results, f, indent=2)
 
-    del model, la, all_sample_probs, all_map_probs, eval_dataloader, map_dataloader
+    if args.results_dir is not None:
+        _seed_label = args.seed_label if args.seed_label is not None else str(args.seed)
+        res_dir = Path(args.results_dir) / args.task_name / _seed_label
+        res_dir.mkdir(parents=True, exist_ok=True)
+        for k in n_samples_list:
+            per_k = {"val": val_results[str(k)]}
+            if args.eval_on_test:
+                per_k["test"] = test_results[str(k)]
+            fname = f"mc_{args.sampling_method}_{k}.json"
+            (res_dir / fname).write_text(json.dumps(per_k, indent=2))
+            accelerator.print(f"  saved: {res_dir / fname}")
+
+    del model, la, eval_dataloader, map_dataloader
     torch.cuda.empty_cache()
 
 

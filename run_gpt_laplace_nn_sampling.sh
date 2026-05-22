@@ -7,8 +7,11 @@ export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 IFS=' ' read -r -a tasks           <<< "${TASKS:-winogrande_s}"
 IFS=' ' read -r -a seeds           <<< "${SEEDS:-21}"
 IFS=' ' read -r -a load_steps      <<< "${LOAD_STEPS:-4000}"
-IFS=' ' read -r -a n_samples       <<< "${N_SAMPLES:-1 2 4 8 16}"
-IFS=' ' read -r -a sampling_methods <<< "${SAMPLING_METHODS:-kron diag}"
+IFS=' ' read -r -a n_samples       <<< "${N_SAMPLES:-1 2 4 8 16 32 64}"
+IFS=' ' read -r -a sampling_methods <<< "${SAMPLING_METHODS:-kron}"
+results_dir=${RESULTS_DIR:-./results}
+eval_on_test=${EVAL_ON_TEST:-1}
+posterior_scale=${POSTERIOR_SCALE:-1.0}
 
 declare -A seed_to_label=([21]=seed1 [42]=seed2 [87]=seed3 [13]=seed4 [100]=seed5)
 
@@ -58,6 +61,9 @@ for task in "${tasks[@]}"; do
                             --lm_head \
                             --sampling_method $sampling_method \
                             --n_samples "${n_samples[@]}" \
+                            --results_dir $results_dir \
+                            --posterior_scale $posterior_scale \
+                            $( [ "${eval_on_test}" = "1" ] && echo "--eval_on_test" ) \
                             2>&1 | tee "$log_file"
                         done
                         done

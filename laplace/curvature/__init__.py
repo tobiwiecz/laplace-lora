@@ -4,8 +4,12 @@ from laplace.curvature.curvature import CurvatureInterface, GGNInterface, EFInte
 
 try:
     from laplace.curvature.asdl import AsdlHessian, AsdlGGN, AsdlEF, AsdlInterface
-except ModuleNotFoundError:
+except (ImportError, ModuleNotFoundError):
     logging.info('asdfghjkl backend not available.')
+    AsdlHessian = None
+    AsdlGGN     = None
+    AsdlEF      = None
+    AsdlInterface = None
 
 __all__ = ['CurvatureInterface', 'GGNInterface', 'EFInterface',
            'AsdlInterface', 'AsdlGGN', 'AsdlEF', 'AsdlHessian']

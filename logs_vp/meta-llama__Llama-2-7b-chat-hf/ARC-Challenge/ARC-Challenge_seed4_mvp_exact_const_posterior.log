@@ -1,0 +1,744 @@
+Logging to: logs_vp/meta-llama__Llama-2-7b-chat-hf/ARC-Challenge/ARC-Challenge_seed4_mvp_exact_const_posterior.log
+Running VP calibration: meta-llama/Llama-2-7b-chat-hf | ARC-Challenge | seed4 | sub=all | rms=mvp | swiglu=exact | total_steps=100
+[transformers] loading configuration file config.json from cache at /pfss/mlde/workspaces/mlde_wsp_Rohrbach/users/tw65vyka/.cache/huggingface/hub/models--meta-llama--Llama-2-7b-chat-hf/snapshots/f5db02db724555f92da89c216ac04704f23d4590/config.json
+[transformers] Model config LlamaConfig {
+  "architectures": [
+    "LlamaForCausalLM"
+  ],
+  "attention_bias": false,
+  "attention_dropout": 0.0,
+  "bos_token_id": 1,
+  "dtype": "float16",
+  "eos_token_id": 2,
+  "head_dim": 128,
+  "hidden_act": "silu",
+  "hidden_size": 4096,
+  "initializer_range": 0.02,
+  "intermediate_size": 11008,
+  "max_position_embeddings": 4096,
+  "mlp_bias": false,
+  "model_type": "llama",
+  "num_attention_heads": 32,
+  "num_hidden_layers": 32,
+  "num_key_value_heads": 32,
+  "pad_token_id": null,
+  "pretraining_tp": 1,
+  "rms_norm_eps": 1e-05,
+  "rope_parameters": {
+    "rope_theta": 10000.0,
+    "rope_type": "default"
+  },
+  "tie_word_embeddings": false,
+  "transformers_version": "5.7.0",
+  "use_cache": true,
+  "vocab_size": 32000
+}
+
+Tokenising:   0%|          | 0/1117 [00:00<?, ? examples/s]Tokenising:  90%|████████▉ | 1000/1117 [00:00<00:00, 1962.17 examples/s]Tokenising: 100%|██████████| 1117/1117 [00:00<00:00, 2098.98 examples/s]
+Tokenising:   0%|          | 0/1165 [00:00<?, ? examples/s]Tokenising:  86%|████████▌ | 1000/1165 [00:00<00:00, 8304.07 examples/s]Tokenising: 100%|██████████| 1165/1165 [00:00<00:00, 8379.11 examples/s]
+Tokenising:   0%|          | 0/295 [00:00<?, ? examples/s]Tokenising: 100%|██████████| 295/295 [00:00<00:00, 11117.28 examples/s]
+[transformers] loading configuration file config.json from cache at /pfss/mlde/workspaces/mlde_wsp_Rohrbach/users/tw65vyka/.cache/huggingface/hub/models--meta-llama--Llama-2-7b-chat-hf/snapshots/f5db02db724555f92da89c216ac04704f23d4590/config.json
+[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
+[transformers] Model config LlamaConfig {
+  "architectures": [
+    "LlamaForCausalLM"
+  ],
+  "attention_bias": false,
+  "attention_dropout": 0.0,
+  "bos_token_id": 1,
+  "dtype": "bfloat16",
+  "eos_token_id": 2,
+  "head_dim": 128,
+  "hidden_act": "silu",
+  "hidden_size": 4096,
+  "initializer_range": 0.02,
+  "intermediate_size": 11008,
+  "max_position_embeddings": 4096,
+  "mlp_bias": false,
+  "model_type": "llama",
+  "num_attention_heads": 32,
+  "num_hidden_layers": 32,
+  "num_key_value_heads": 32,
+  "pad_token_id": null,
+  "pretraining_tp": 1,
+  "rms_norm_eps": 1e-05,
+  "rope_parameters": {
+    "rope_theta": 10000.0,
+    "rope_type": "default"
+  },
+  "tie_word_embeddings": false,
+  "transformers_version": "5.7.0",
+  "use_cache": true,
+  "vocab_size": 32000
+}
+
+[transformers] loading weights file model.safetensors from cache at /pfss/mlde/workspaces/mlde_wsp_Rohrbach/users/tw65vyka/.cache/huggingface/hub/models--meta-llama--Llama-2-7b-chat-hf/snapshots/f5db02db724555f92da89c216ac04704f23d4590/model.safetensors.index.json
+[transformers] Will use dtype=torch.bfloat16 as defined in model's config object
+[transformers] Generate config GenerationConfig {
+  "bos_token_id": 1,
+  "eos_token_id": 2,
+  "output_attentions": false,
+  "output_hidden_states": false,
+  "use_cache": true
+}
+
+Loading weights:   0%|          | 0/291 [00:00<?, ?it/s]Loading weights:   0%|          | 1/291 [00:01<05:27,  1.13s/it]Loading weights:   1%|          | 2/291 [00:02<04:57,  1.03s/it]Loading weights:   6%|▌         | 18/291 [00:02<00:21, 12.50it/s]Loading weights:   8%|▊         | 23/291 [00:02<00:22, 11.73it/s]Loading weights:  10%|▉         | 29/291 [00:02<00:16, 16.05it/s]Loading weights:  12%|█▏        | 34/291 [00:03<00:20, 12.33it/s]Loading weights:  13%|█▎        | 38/291 [00:03<00:19, 13.27it/s]Loading weights:  14%|█▍        | 41/291 [00:04<00:21, 11.68it/s]Loading weights:  16%|█▌        | 47/291 [00:04<00:16, 15.01it/s]Loading weights:  17%|█▋        | 50/291 [00:04<00:19, 12.50it/s]Loading weights:  19%|█▊        | 54/291 [00:04<00:15, 15.23it/s]Loading weights:  20%|█▉        | 58/291 [00:05<00:15, 14.73it/s]Loading weights:  21%|██        | 61/291 [00:05<00:21, 10.51it/s]Loading weights:  22%|██▏       | 65/291 [00:05<00:17, 12.57it/s]Loading weights:  23%|██▎       | 67/291 [00:06<00:18, 11.79it/s]Loading weights:  24%|██▎       | 69/291 [00:06<00:17, 12.50it/s]Loading weights:  25%|██▌       | 73/291 [00:06<00:14, 15.21it/s]Loading weights:  26%|██▌       | 76/291 [00:06<00:22,  9.55it/s]Loading weights:  27%|██▋       | 78/291 [00:07<00:20, 10.46it/s]Loading weights:  29%|██▊       | 83/291 [00:07<00:13, 15.62it/s]Loading weights:  30%|██▉       | 86/291 [00:07<00:18, 11.31it/s]Loading weights:  32%|███▏      | 92/291 [00:07<00:13, 15.14it/s]Loading weights:  33%|███▎      | 95/291 [00:08<00:12, 15.38it/s]Loading weights:  33%|███▎      | 97/291 [00:08<00:12, 15.75it/s]Loading weights:  35%|███▌      | 103/291 [00:08<00:16, 11.27it/s]Loading weights:  37%|███▋      | 109/291 [00:08<00:11, 16.17it/s]Loading weights:  38%|███▊      | 112/291 [00:09<00:15, 11.34it/s]Loading weights:  40%|███▉      | 115/291 [00:09<00:15, 11.10it/s]Loading weights:  42%|████▏     | 121/291 [00:10<00:12, 13.12it/s]Loading weights:  42%|████▏     | 123/291 [00:10<00:17,  9.72it/s]Loading weights:  45%|████▍     | 130/291 [00:11<00:12, 12.40it/s]Loading weights:  45%|████▌     | 132/291 [00:11<00:13, 11.71it/s]Loading weights:  48%|████▊     | 139/291 [00:11<00:10, 14.50it/s]Loading weights:  48%|████▊     | 141/291 [00:11<00:11, 13.56it/s]Loading weights:  50%|█████     | 146/291 [00:11<00:09, 16.07it/s]Loading weights:  51%|█████     | 148/291 [00:12<00:10, 14.04it/s]Loading weights:  52%|█████▏    | 150/291 [00:12<00:10, 13.51it/s]Loading weights:  54%|█████▍    | 157/291 [00:12<00:08, 15.33it/s]Loading weights:  56%|█████▌    | 163/291 [00:12<00:06, 20.44it/s]Loading weights:  57%|█████▋    | 166/291 [00:13<00:07, 16.41it/s]Loading weights:  58%|█████▊    | 168/291 [00:13<00:07, 15.80it/s]Loading weights:  59%|█████▉    | 173/291 [00:13<00:06, 17.07it/s]Loading weights:  60%|██████    | 175/291 [00:13<00:07, 16.25it/s]Loading weights:  61%|██████    | 177/291 [00:14<00:09, 12.27it/s]Loading weights:  63%|██████▎   | 184/291 [00:14<00:07, 15.10it/s]Loading weights:  64%|██████▍   | 186/291 [00:14<00:06, 15.35it/s]Loading weights:  65%|██████▌   | 190/291 [00:14<00:05, 18.90it/s]Loading weights:  66%|██████▋   | 193/291 [00:15<00:07, 12.34it/s]Loading weights:  69%|██████▊   | 200/291 [00:15<00:04, 19.06it/s]Loading weights:  70%|██████▉   | 203/291 [00:15<00:06, 13.33it/s]Loading weights:  71%|███████▏  | 208/291 [00:15<00:05, 15.98it/s]Loading weights:  73%|███████▎  | 211/291 [00:16<00:07, 10.76it/s]Loading weights:  73%|███████▎  | 213/291 [00:16<00:06, 11.52it/s]Loading weights:  76%|███████▌  | 220/291 [00:17<00:05, 12.48it/s]Loading weights:  78%|███████▊  | 226/291 [00:17<00:03, 16.96it/s]Loading weights:  79%|███████▊  | 229/291 [00:17<00:03, 16.12it/s]Loading weights:  80%|███████▉  | 232/291 [00:17<00:03, 15.64it/s]Loading weights:  80%|████████  | 234/291 [00:17<00:03, 15.31it/s]Loading weights:  82%|████████▏ | 238/291 [00:18<00:03, 14.41it/s]Loading weights:  82%|████████▏ | 240/291 [00:18<00:04, 11.57it/s]Loading weights:  85%|████████▍ | 247/291 [00:18<00:03, 13.80it/s]Loading weights:  86%|████████▌ | 249/291 [00:19<00:02, 14.23it/s]Loading weights:  87%|████████▋ | 254/291 [00:19<00:01, 18.64it/s]Loading weights:  88%|████████▊ | 257/291 [00:19<00:02, 12.76it/s]Loading weights:  90%|█████████ | 262/291 [00:19<00:01, 15.61it/s]Loading weights:  91%|█████████ | 265/291 [00:20<00:01, 14.32it/s]Loading weights:  92%|█████████▏| 267/291 [00:20<00:02,  8.81it/s]Loading weights:  95%|█████████▍| 275/291 [00:20<00:01, 14.23it/s]Loading weights:  95%|█████████▌| 277/291 [00:21<00:01, 12.29it/s]Loading weights:  97%|█████████▋| 283/291 [00:21<00:00, 12.06it/s]Loading weights: 100%|█████████▉| 290/291 [00:21<00:00, 17.40it/s]Loading weights: 100%|██████████| 291/291 [00:21<00:00, 13.31it/s]
+[transformers] loading configuration file generation_config.json from cache at /pfss/mlde/workspaces/mlde_wsp_Rohrbach/users/tw65vyka/.cache/huggingface/hub/models--meta-llama--Llama-2-7b-chat-hf/snapshots/f5db02db724555f92da89c216ac04704f23d4590/generation_config.json
+[transformers] Generate config GenerationConfig {
+  "bos_token_id": 1,
+  "do_sample": true,
+  "eos_token_id": 2,
+  "max_length": 4096,
+  "pad_token_id": 0,
+  "temperature": 0.6,
+  "top_p": 0.9
+}
+
+/pfss/mlde/workspaces/mlde_wsp_Rohrbach/users/tw65vyka/laplace-lora/.venv/lib/python3.12/site-packages/peft/tuners/tuners_utils.py:1348: UserWarning: Model has `tie_word_embeddings=True` and a tied layer is part of the adapter, but `ensure_weight_tying` is not set to True. This can lead to complications, for example when merging the adapter or converting your model to formats other than safetensors. Check the discussion here: https://github.com/huggingface/peft/issues/2777
+  warnings.warn(msg)
+  total_steps=100 → steps_per_epoch=2 → n_epochs=50
+--- Loading Laplace posterior from outputs_laplace/ARC-Challenge/meta-llama/Llama-2-7b-chat-hf_lora_lmhead_16_0.1_5e-05_seed4//step_4000 ---
+Prior precision: tensor([79.9466], device='cuda:0')
+  model.base_model.model.model.layers.0.self_attn.q_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=1.250e-02
+  model.base_model.model.model.layers.0.self_attn.q_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=1.250e-02
+  model.base_model.model.model.layers.0.self_attn.v_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=1.250e-02
+  model.base_model.model.model.layers.0.self_attn.v_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=1.244e-02
+  model.base_model.model.model.layers.1.self_attn.q_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=1.250e-02
+  model.base_model.model.model.layers.1.self_attn.q_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=1.250e-02
+  model.base_model.model.model.layers.1.self_attn.v_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=1.250e-02
+  model.base_model.model.model.layers.1.self_attn.v_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=1.236e-02
+  model.base_model.model.model.layers.2.self_attn.q_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=1.250e-02
+  model.base_model.model.model.layers.2.self_attn.q_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=1.250e-02
+  model.base_model.model.model.layers.2.self_attn.v_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=1.247e-02
+  model.base_model.model.model.layers.2.self_attn.v_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=1.188e-02
+  model.base_model.model.model.layers.3.self_attn.q_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=1.250e-02
+  model.base_model.model.model.layers.3.self_attn.q_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=1.250e-02
+  model.base_model.model.model.layers.3.self_attn.v_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=1.240e-02
+  model.base_model.model.model.layers.3.self_attn.v_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=1.195e-02
+  model.base_model.model.model.layers.4.self_attn.q_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=1.250e-02
+  model.base_model.model.model.layers.4.self_attn.q_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=1.249e-02
+  model.base_model.model.model.layers.4.self_attn.v_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=1.247e-02
+  model.base_model.model.model.layers.4.self_attn.v_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=1.201e-02
+  model.base_model.model.model.layers.5.self_attn.q_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=1.250e-02
+  model.base_model.model.model.layers.5.self_attn.q_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=1.249e-02
+  model.base_model.model.model.layers.5.self_attn.v_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=1.248e-02
+  model.base_model.model.model.layers.5.self_attn.v_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=1.199e-02
+  model.base_model.model.model.layers.6.self_attn.q_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=1.250e-02
+  model.base_model.model.model.layers.6.self_attn.q_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=1.248e-02
+  model.base_model.model.model.layers.6.self_attn.v_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=1.247e-02
+  model.base_model.model.model.layers.6.self_attn.v_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=1.203e-02
+  model.base_model.model.model.layers.7.self_attn.q_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=1.250e-02
+  model.base_model.model.model.layers.7.self_attn.q_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=1.248e-02
+  model.base_model.model.model.layers.7.self_attn.v_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=1.249e-02
+  model.base_model.model.model.layers.7.self_attn.v_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=1.201e-02
+  model.base_model.model.model.layers.8.self_attn.q_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=1.250e-02
+  model.base_model.model.model.layers.8.self_attn.q_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=1.249e-02
+  model.base_model.model.model.layers.8.self_attn.v_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=1.249e-02
+  model.base_model.model.model.layers.8.self_attn.v_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=1.209e-02
+  model.base_model.model.model.layers.9.self_attn.q_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=1.250e-02
+  model.base_model.model.model.layers.9.self_attn.q_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=1.247e-02
+  model.base_model.model.model.layers.9.self_attn.v_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=1.249e-02
+  model.base_model.model.model.layers.9.self_attn.v_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=1.220e-02
+  model.base_model.model.model.layers.10.self_attn.q_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=1.250e-02
+  model.base_model.model.model.layers.10.self_attn.q_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=1.248e-02
+  model.base_model.model.model.layers.10.self_attn.v_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=1.249e-02
+  model.base_model.model.model.layers.10.self_attn.v_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=1.226e-02
+  model.base_model.model.model.layers.11.self_attn.q_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=1.250e-02
+  model.base_model.model.model.layers.11.self_attn.q_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=1.248e-02
+  model.base_model.model.model.layers.11.self_attn.v_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=1.248e-02
+  model.base_model.model.model.layers.11.self_attn.v_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=1.233e-02
+  model.base_model.model.model.layers.12.self_attn.q_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=1.250e-02
+  model.base_model.model.model.layers.12.self_attn.q_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=1.248e-02
+  model.base_model.model.model.layers.12.self_attn.v_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=1.250e-02
+  model.base_model.model.model.layers.12.self_attn.v_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=1.241e-02
+  model.base_model.model.model.layers.13.self_attn.q_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=1.250e-02
+  model.base_model.model.model.layers.13.self_attn.q_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=1.249e-02
+  model.base_model.model.model.layers.13.self_attn.v_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=1.249e-02
+  model.base_model.model.model.layers.13.self_attn.v_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=1.242e-02
+  model.base_model.model.model.layers.14.self_attn.q_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=1.250e-02
+  model.base_model.model.model.layers.14.self_attn.q_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=1.249e-02
+  model.base_model.model.model.layers.14.self_attn.v_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=1.250e-02
+  model.base_model.model.model.layers.14.self_attn.v_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=1.244e-02
+  model.base_model.model.model.layers.15.self_attn.q_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=1.250e-02
+  model.base_model.model.model.layers.15.self_attn.q_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=1.249e-02
+  model.base_model.model.model.layers.15.self_attn.v_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=1.250e-02
+  model.base_model.model.model.layers.15.self_attn.v_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=1.248e-02
+  model.base_model.model.model.layers.16.self_attn.q_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=1.250e-02
+  model.base_model.model.model.layers.16.self_attn.q_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=1.250e-02
+  model.base_model.model.model.layers.16.self_attn.v_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=1.250e-02
+  model.base_model.model.model.layers.16.self_attn.v_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=1.248e-02
+  model.base_model.model.model.layers.17.self_attn.q_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=1.250e-02
+  model.base_model.model.model.layers.17.self_attn.q_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=1.250e-02
+  model.base_model.model.model.layers.17.self_attn.v_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=1.250e-02
+  model.base_model.model.model.layers.17.self_attn.v_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=1.249e-02
+  model.base_model.model.model.layers.18.self_attn.q_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=1.250e-02
+  model.base_model.model.model.layers.18.self_attn.q_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=1.250e-02
+  model.base_model.model.model.layers.18.self_attn.v_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=1.250e-02
+  model.base_model.model.model.layers.18.self_attn.v_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=1.249e-02
+  model.base_model.model.model.layers.19.self_attn.q_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=1.250e-02
+  model.base_model.model.model.layers.19.self_attn.q_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=1.250e-02
+  model.base_model.model.model.layers.19.self_attn.v_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=1.250e-02
+  model.base_model.model.model.layers.19.self_attn.v_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=1.250e-02
+  model.base_model.model.model.layers.20.self_attn.q_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=1.250e-02
+  model.base_model.model.model.layers.20.self_attn.q_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=1.250e-02
+  model.base_model.model.model.layers.20.self_attn.v_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=1.250e-02
+  model.base_model.model.model.layers.20.self_attn.v_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=1.250e-02
+  model.base_model.model.model.layers.21.self_attn.q_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=1.250e-02
+  model.base_model.model.model.layers.21.self_attn.q_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=1.250e-02
+  model.base_model.model.model.layers.21.self_attn.v_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=1.250e-02
+  model.base_model.model.model.layers.21.self_attn.v_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=1.250e-02
+  model.base_model.model.model.layers.22.self_attn.q_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=1.250e-02
+  model.base_model.model.model.layers.22.self_attn.q_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=1.250e-02
+  model.base_model.model.model.layers.22.self_attn.v_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=1.250e-02
+  model.base_model.model.model.layers.22.self_attn.v_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=1.250e-02
+  model.base_model.model.model.layers.23.self_attn.q_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=1.250e-02
+  model.base_model.model.model.layers.23.self_attn.q_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=1.250e-02
+  model.base_model.model.model.layers.23.self_attn.v_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=1.250e-02
+  model.base_model.model.model.layers.23.self_attn.v_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=1.250e-02
+  model.base_model.model.model.layers.24.self_attn.q_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=1.250e-02
+  model.base_model.model.model.layers.24.self_attn.q_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=1.250e-02
+  model.base_model.model.model.layers.24.self_attn.v_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=1.250e-02
+  model.base_model.model.model.layers.24.self_attn.v_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=1.250e-02
+  model.base_model.model.model.layers.25.self_attn.q_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=1.250e-02
+  model.base_model.model.model.layers.25.self_attn.q_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=1.250e-02
+  model.base_model.model.model.layers.25.self_attn.v_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=1.250e-02
+  model.base_model.model.model.layers.25.self_attn.v_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=1.250e-02
+  model.base_model.model.model.layers.26.self_attn.q_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=1.250e-02
+  model.base_model.model.model.layers.26.self_attn.q_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=1.250e-02
+  model.base_model.model.model.layers.26.self_attn.v_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=1.250e-02
+  model.base_model.model.model.layers.26.self_attn.v_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=1.250e-02
+  model.base_model.model.model.layers.27.self_attn.q_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=1.250e-02
+  model.base_model.model.model.layers.27.self_attn.q_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=1.250e-02
+  model.base_model.model.model.layers.27.self_attn.v_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=1.250e-02
+  model.base_model.model.model.layers.27.self_attn.v_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=1.250e-02
+  model.base_model.model.model.layers.28.self_attn.q_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=1.250e-02
+  model.base_model.model.model.layers.28.self_attn.q_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=1.250e-02
+  model.base_model.model.model.layers.28.self_attn.v_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=1.250e-02
+  model.base_model.model.model.layers.28.self_attn.v_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=1.250e-02
+  model.base_model.model.model.layers.29.self_attn.q_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=1.250e-02
+  model.base_model.model.model.layers.29.self_attn.q_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=1.250e-02
+  model.base_model.model.model.layers.29.self_attn.v_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=1.250e-02
+  model.base_model.model.model.layers.29.self_attn.v_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=1.250e-02
+  model.base_model.model.model.layers.30.self_attn.q_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=1.250e-02
+  model.base_model.model.model.layers.30.self_attn.q_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=1.250e-02
+  model.base_model.model.model.layers.30.self_attn.v_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=1.250e-02
+  model.base_model.model.model.layers.30.self_attn.v_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=1.250e-02
+  model.base_model.model.model.layers.31.self_attn.q_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=1.250e-02
+  model.base_model.model.model.layers.31.self_attn.q_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=1.250e-02
+  model.base_model.model.model.layers.31.self_attn.v_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=1.250e-02
+  model.base_model.model.model.layers.31.self_attn.v_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=1.250e-02
+  model.base_model.model.lm_head.lora_A.weight: torch.Size([8, 4096])  mean=1.250e-02
+  model.base_model.model.lm_head.lora_B.weight: torch.Size([4, 8])  mean=1.244e-02
+  Extracted Kronecker factors for 130 parameters
+--- Building VPBackbone (rms_norm=mvp, swiglu=exact, kron=True) ---
+  log_s fixed buffer = 0.0000 (not learned)
+
+--- Variant: per_layer_logit (33 params, 50 epochs) ---
+  init NLL (before training) = 0.9595
+    batch   10/19  nll(last 10)=0.9742  log_s=0.0000
+      log_T mean=0.0000  min=0.0000  max=0.0000
+      log_T_logit=0.0000
+    batch   19/19  nll(last 10)=0.9513  log_s=0.0000
+      log_T mean=0.0055  min=0.0033  max=0.0086
+      log_T_logit=0.0038
+  epoch   1/50  nll=0.9634  log_s=0.0000  lr_s=9.99e-03  lr_t_max=9.99e-03  elapsed=1m03s  eta=52m08s
+  log_T mean=0.0055  min=0.0033  max=0.0086
+  log_T=[0.009, 0.008, 0.007, 0.007, 0.007, 0.007, 0.007, 0.007, 0.007, 0.006, 0.005, 0.005, 0.005, 0.007, 0.007, 0.007, 0.003, 0.004, 0.006, 0.005, 0.004, 0.005, 0.004, 0.004, 0.004, 0.004, 0.004, 0.004, 0.004, 0.004, 0.003, 0.003]
+  log_T_logit=0.0038
+    batch   10/19  nll(last 10)=0.9608  log_s=0.0000
+      log_T mean=0.0055  min=0.0033  max=0.0086
+      log_T_logit=0.0038
+    batch   19/19  nll(last 10)=0.9522  log_s=0.0000
+      log_T mean=-0.0005  min=-0.0087  max=0.0097
+      log_T_logit=-0.0074
+  epoch   2/50  nll=0.9567  log_s=0.0000  lr_s=9.96e-03  lr_t_max=9.96e-03  elapsed=2m07s  eta=51m05s
+  log_T mean=-0.0005  min=-0.0087  max=0.0097
+  log_T=[0.010, 0.008, 0.006, 0.006, 0.006, 0.006, 0.005, 0.005, 0.006, 0.001, -0.000, -0.001, -0.001, 0.004, 0.004, 0.003, -0.008, -0.005, -0.000, -0.003, -0.005, -0.003, -0.006, -0.005, -0.004, -0.005, -0.006, -0.005, -0.005, -0.008, -0.009, -0.009]
+  log_T_logit=-0.0074
+    batch   10/19  nll(last 10)=0.9730  log_s=0.0000
+      log_T mean=-0.0005  min=-0.0087  max=0.0097
+      log_T_logit=-0.0074
+    batch   19/19  nll(last 10)=0.9516  log_s=0.0000
+      log_T mean=-0.0063  min=-0.0206  max=0.0104
+      log_T_logit=-0.0187
+  epoch   3/50  nll=0.9629  log_s=0.0000  lr_s=9.91e-03  lr_t_max=9.91e-03  elapsed=3m11s  eta=50m01s
+  log_T mean=-0.0063  min=-0.0206  max=0.0104
+  log_T=[0.010, 0.007, 0.006, 0.005, 0.005, 0.005, 0.004, 0.004, 0.005, -0.003, -0.005, -0.007, -0.007, 0.002, 0.002, 0.001, -0.019, -0.013, -0.006, -0.011, -0.014, -0.011, -0.016, -0.014, -0.013, -0.015, -0.016, -0.015, -0.014, -0.019, -0.021, -0.021]
+  log_T_logit=-0.0187
+    batch   10/19  nll(last 10)=0.9737  log_s=0.0000
+      log_T mean=-0.0063  min=-0.0206  max=0.0104
+      log_T_logit=-0.0187
+    batch   19/19  nll(last 10)=0.9501  log_s=0.0000
+      log_T mean=-0.0110  min=-0.0319  max=0.0116
+      log_T_logit=-0.0295
+  epoch   4/50  nll=0.9625  log_s=0.0000  lr_s=9.84e-03  lr_t_max=9.84e-03  elapsed=4m15s  eta=48m58s
+  log_T mean=-0.0110  min=-0.0319  max=0.0116
+  log_T=[0.012, 0.008, 0.006, 0.004, 0.006, 0.005, 0.005, 0.005, 0.006, -0.006, -0.009, -0.013, -0.012, 0.001, 0.002, 0.002, -0.029, -0.019, -0.010, -0.018, -0.023, -0.019, -0.026, -0.022, -0.022, -0.023, -0.025, -0.024, -0.023, -0.029, -0.032, -0.032]
+  log_T_logit=-0.0295
+    batch   10/19  nll(last 10)=0.9770  log_s=0.0000
+      log_T mean=-0.0110  min=-0.0319  max=0.0116
+      log_T_logit=-0.0295
+    batch   19/19  nll(last 10)=0.9516  log_s=0.0000
+      log_T mean=-0.0146  min=-0.0422  max=0.0133
+      log_T_logit=-0.0396
+  epoch   5/50  nll=0.9650  log_s=0.0000  lr_s=9.76e-03  lr_t_max=9.76e-03  elapsed=5m19s  eta=47m54s
+  log_T mean=-0.0146  min=-0.0422  max=0.0133
+  log_T=[0.013, 0.008, 0.007, 0.005, 0.007, 0.006, 0.007, 0.008, 0.009, -0.008, -0.011, -0.017, -0.015, 0.002, 0.002, 0.006, -0.037, -0.023, -0.013, -0.024, -0.031, -0.025, -0.034, -0.030, -0.029, -0.031, -0.033, -0.032, -0.031, -0.039, -0.042, -0.042]
+  log_T_logit=-0.0396
+    batch   10/19  nll(last 10)=0.9681  log_s=0.0000
+      log_T mean=-0.0146  min=-0.0422  max=0.0133
+      log_T_logit=-0.0396
+    batch   19/19  nll(last 10)=0.9553  log_s=0.0000
+      log_T mean=-0.0171  min=-0.0519  max=0.0153
+      log_T_logit=-0.0492
+  epoch   6/50  nll=0.9620  log_s=0.0000  lr_s=9.65e-03  lr_t_max=9.65e-03  elapsed=6m23s  eta=46m51s
+  log_T mean=-0.0171  min=-0.0519  max=0.0153
+  log_T=[0.015, 0.010, 0.009, 0.007, 0.010, 0.008, 0.010, 0.012, 0.013, -0.009, -0.012, -0.020, -0.018, 0.005, 0.005, 0.012, -0.044, -0.025, -0.014, -0.030, -0.038, -0.030, -0.043, -0.036, -0.036, -0.038, -0.040, -0.039, -0.038, -0.047, -0.052, -0.052]
+  log_T_logit=-0.0492
+    batch   10/19  nll(last 10)=0.9649  log_s=0.0000
+      log_T mean=-0.0171  min=-0.0519  max=0.0153
+      log_T_logit=-0.0492
+    batch   19/19  nll(last 10)=0.9645  log_s=0.0000
+      log_T mean=-0.0186  min=-0.0608  max=0.0201
+      log_T_logit=-0.0582
+  epoch   7/50  nll=0.9647  log_s=0.0000  lr_s=9.52e-03  lr_t_max=9.52e-03  elapsed=7m27s  eta=45m47s
+  log_T mean=-0.0186  min=-0.0608  max=0.0201
+  log_T=[0.018, 0.012, 0.012, 0.010, 0.013, 0.010, 0.015, 0.017, 0.018, -0.009, -0.012, -0.022, -0.020, 0.009, 0.009, 0.020, -0.050, -0.024, -0.013, -0.034, -0.044, -0.035, -0.050, -0.042, -0.042, -0.044, -0.047, -0.046, -0.044, -0.056, -0.061, -0.061]
+  log_T_logit=-0.0582
+    batch   10/19  nll(last 10)=0.9713  log_s=0.0000
+      log_T mean=-0.0186  min=-0.0608  max=0.0201
+      log_T_logit=-0.0582
+    batch   19/19  nll(last 10)=0.9555  log_s=0.0000
+      log_T mean=-0.0194  min=-0.0693  max=0.0298
+      log_T_logit=-0.0668
+  epoch   8/50  nll=0.9638  log_s=0.0000  lr_s=9.38e-03  lr_t_max=9.38e-03  elapsed=8m31s  eta=44m44s
+  log_T mean=-0.0194  min=-0.0693  max=0.0298
+  log_T=[0.021, 0.015, 0.016, 0.013, 0.017, 0.014, 0.020, 0.023, 0.024, -0.008, -0.011, -0.024, -0.021, 0.014, 0.014, 0.030, -0.055, -0.022, -0.012, -0.037, -0.050, -0.039, -0.057, -0.048, -0.047, -0.050, -0.054, -0.052, -0.050, -0.063, -0.069, -0.069]
+  log_T_logit=-0.0668
+    batch   10/19  nll(last 10)=0.9635  log_s=0.0000
+      log_T mean=-0.0194  min=-0.0693  max=0.0298
+      log_T_logit=-0.0668
+    batch   19/19  nll(last 10)=0.9440  log_s=0.0000
+      log_T mean=-0.0195  min=-0.0772  max=0.0411
+      log_T_logit=-0.0750
+  epoch   9/50  nll=0.9543  log_s=0.0000  lr_s=9.22e-03  lr_t_max=9.22e-03  elapsed=9m35s  eta=43m40s
+  log_T mean=-0.0195  min=-0.0772  max=0.0411
+  log_T=[0.024, 0.018, 0.020, 0.017, 0.022, 0.017, 0.026, 0.030, 0.032, -0.007, -0.009, -0.025, -0.022, 0.020, 0.019, 0.041, -0.058, -0.019, -0.010, -0.041, -0.056, -0.043, -0.064, -0.053, -0.052, -0.055, -0.060, -0.058, -0.055, -0.070, -0.077, -0.077]
+  log_T_logit=-0.0750
+    batch   10/19  nll(last 10)=0.9666  log_s=0.0000
+      log_T mean=-0.0195  min=-0.0772  max=0.0411
+      log_T_logit=-0.0750
+    batch   19/19  nll(last 10)=0.9498  log_s=0.0000
+      log_T mean=-0.0189  min=-0.0846  max=0.0538
+      log_T_logit=-0.0827
+  epoch  10/50  nll=0.9587  log_s=0.0000  lr_s=9.05e-03  lr_t_max=9.05e-03  elapsed=10m39s  eta=42m36s
+  log_T mean=-0.0189  min=-0.0846  max=0.0538
+  log_T=[0.027, 0.022, 0.025, 0.021, 0.027, 0.022, 0.033, 0.038, 0.040, -0.005, -0.006, -0.026, -0.021, 0.027, 0.026, 0.054, -0.061, -0.014, -0.006, -0.043, -0.061, -0.046, -0.070, -0.058, -0.056, -0.059, -0.065, -0.063, -0.060, -0.077, -0.085, -0.084]
+  log_T_logit=-0.0827
+    batch   10/19  nll(last 10)=0.9713  log_s=0.0000
+      log_T mean=-0.0189  min=-0.0846  max=0.0538
+      log_T_logit=-0.0827
+    batch   19/19  nll(last 10)=0.9504  log_s=0.0000
+      log_T mean=-0.0175  min=-0.0915  max=0.0675
+      log_T_logit=-0.0901
+  epoch  11/50  nll=0.9614  log_s=0.0000  lr_s=8.85e-03  lr_t_max=8.85e-03  elapsed=11m43s  eta=41m32s
+  log_T mean=-0.0175  min=-0.0915  max=0.0675
+  log_T=[0.031, 0.026, 0.031, 0.027, 0.034, 0.027, 0.042, 0.047, 0.049, -0.002, -0.002, -0.025, -0.020, 0.035, 0.034, 0.067, -0.062, -0.007, -0.002, -0.045, -0.066, -0.049, -0.076, -0.062, -0.060, -0.063, -0.070, -0.068, -0.064, -0.083, -0.091, -0.091]
+  log_T_logit=-0.0901
+    batch   10/19  nll(last 10)=0.9700  log_s=0.0000
+      log_T mean=-0.0175  min=-0.0915  max=0.0675
+      log_T_logit=-0.0901
+    batch   19/19  nll(last 10)=0.9484  log_s=0.0000
+      log_T mean=-0.0155  min=-0.0980  max=0.0819
+      log_T_logit=-0.0970
+  epoch  12/50  nll=0.9598  log_s=0.0000  lr_s=8.64e-03  lr_t_max=8.64e-03  elapsed=12m46s  eta=40m28s
+  log_T mean=-0.0155  min=-0.0980  max=0.0819
+  log_T=[0.035, 0.030, 0.037, 0.033, 0.041, 0.033, 0.051, 0.057, 0.059, 0.002, 0.003, -0.024, -0.017, 0.044, 0.043, 0.082, -0.063, 0.001, 0.003, -0.047, -0.070, -0.051, -0.082, -0.065, -0.063, -0.067, -0.074, -0.073, -0.068, -0.089, -0.098, -0.097]
+  log_T_logit=-0.0970
+    batch   10/19  nll(last 10)=0.9739  log_s=0.0000
+      log_T mean=-0.0155  min=-0.0980  max=0.0819
+      log_T_logit=-0.0970
+    batch   19/19  nll(last 10)=0.9457  log_s=0.0000
+      log_T mean=-0.0130  min=-0.1042  max=0.0969
+      log_T_logit=-0.1033
+  epoch  13/50  nll=0.9606  log_s=0.0000  lr_s=8.42e-03  lr_t_max=8.42e-03  elapsed=13m50s  eta=39m24s
+  log_T mean=-0.0130  min=-0.1042  max=0.0969
+  log_T=[0.039, 0.035, 0.044, 0.040, 0.048, 0.039, 0.060, 0.068, 0.069, 0.007, 0.009, -0.022, -0.014, 0.054, 0.053, 0.097, -0.063, 0.009, 0.009, -0.048, -0.074, -0.053, -0.087, -0.069, -0.066, -0.070, -0.078, -0.077, -0.072, -0.094, -0.104, -0.104]
+  log_T_logit=-0.1033
+    batch   10/19  nll(last 10)=0.9684  log_s=0.0000
+      log_T mean=-0.0130  min=-0.1042  max=0.0969
+      log_T_logit=-0.1033
+    batch   19/19  nll(last 10)=0.9467  log_s=0.0000
+      log_T mean=-0.0099  min=-0.1099  max=0.1125
+      log_T_logit=-0.1091
+  epoch  14/50  nll=0.9581  log_s=0.0000  lr_s=8.19e-03  lr_t_max=8.19e-03  elapsed=14m54s  eta=38m20s
+  log_T mean=-0.0099  min=-0.1099  max=0.1125
+  log_T=[0.043, 0.041, 0.052, 0.047, 0.056, 0.045, 0.071, 0.079, 0.081, 0.012, 0.016, -0.019, -0.010, 0.064, 0.063, 0.112, -0.062, 0.018, 0.016, -0.049, -0.078, -0.055, -0.092, -0.071, -0.069, -0.072, -0.082, -0.081, -0.075, -0.099, -0.110, -0.109]
+  log_T_logit=-0.1091
+    batch   10/19  nll(last 10)=0.9661  log_s=0.0000
+      log_T mean=-0.0099  min=-0.1099  max=0.1125
+      log_T_logit=-0.1091
+    batch   19/19  nll(last 10)=0.9377  log_s=0.0000
+      log_T mean=-0.0063  min=-0.1155  max=0.1284
+      log_T_logit=-0.1147
+  epoch  15/50  nll=0.9527  log_s=0.0000  lr_s=7.94e-03  lr_t_max=7.94e-03  elapsed=15m58s  eta=37m17s
+  log_T mean=-0.0063  min=-0.1155  max=0.1284
+  log_T=[0.048, 0.046, 0.060, 0.055, 0.065, 0.053, 0.081, 0.091, 0.092, 0.018, 0.025, -0.014, -0.004, 0.075, 0.075, 0.128, -0.061, 0.028, 0.022, -0.050, -0.082, -0.056, -0.097, -0.074, -0.071, -0.074, -0.085, -0.085, -0.078, -0.104, -0.116, -0.115]
+  log_T_logit=-0.1147
+    batch   10/19  nll(last 10)=0.9702  log_s=0.0000
+      log_T mean=-0.0063  min=-0.1155  max=0.1284
+      log_T_logit=-0.1147
+    batch   19/19  nll(last 10)=0.9443  log_s=0.0000
+      log_T mean=-0.0024  min=-0.1208  max=0.1443
+      log_T_logit=-0.1197
+  epoch  16/50  nll=0.9579  log_s=0.0000  lr_s=7.68e-03  lr_t_max=7.68e-03  elapsed=17m02s  eta=36m13s
+  log_T mean=-0.0024  min=-0.1208  max=0.1443
+  log_T=[0.053, 0.053, 0.068, 0.063, 0.074, 0.060, 0.093, 0.103, 0.105, 0.024, 0.034, -0.010, 0.002, 0.087, 0.087, 0.144, -0.059, 0.037, 0.030, -0.050, -0.086, -0.057, -0.101, -0.076, -0.072, -0.076, -0.088, -0.088, -0.080, -0.109, -0.121, -0.120]
+  log_T_logit=-0.1197
+    batch   10/19  nll(last 10)=0.9603  log_s=0.0000
+      log_T mean=-0.0024  min=-0.1208  max=0.1443
+      log_T_logit=-0.1197
+    batch   19/19  nll(last 10)=0.9415  log_s=0.0000
+      log_T mean=0.0019  min=-0.1261  max=0.1603
+      log_T_logit=-0.1244
+  epoch  17/50  nll=0.9514  log_s=0.0000  lr_s=7.41e-03  lr_t_max=7.41e-03  elapsed=18m06s  eta=35m09s
+  log_T mean=0.0019  min=-0.1261  max=0.1603
+  log_T=[0.058, 0.059, 0.077, 0.072, 0.084, 0.068, 0.105, 0.116, 0.117, 0.031, 0.043, -0.004, 0.009, 0.099, 0.100, 0.160, -0.057, 0.048, 0.037, -0.051, -0.091, -0.057, -0.106, -0.077, -0.073, -0.077, -0.090, -0.091, -0.083, -0.113, -0.126, -0.125]
+  log_T_logit=-0.1244
+    batch   10/19  nll(last 10)=0.9602  log_s=0.0000
+      log_T mean=0.0019  min=-0.1261  max=0.1603
+      log_T_logit=-0.1244
+    batch   19/19  nll(last 10)=0.9422  log_s=0.0000
+      log_T mean=0.0063  min=-0.1315  max=0.1761
+      log_T_logit=-0.1290
+  epoch  18/50  nll=0.9517  log_s=0.0000  lr_s=7.13e-03  lr_t_max=7.13e-03  elapsed=19m10s  eta=34m05s
+  log_T mean=0.0063  min=-0.1315  max=0.1761
+  log_T=[0.064, 0.066, 0.087, 0.081, 0.094, 0.076, 0.117, 0.129, 0.130, 0.038, 0.053, 0.001, 0.016, 0.110, 0.113, 0.176, -0.055, 0.058, 0.045, -0.052, -0.095, -0.058, -0.110, -0.079, -0.074, -0.078, -0.093, -0.094, -0.085, -0.118, -0.131, -0.131]
+  log_T_logit=-0.1290
+    batch   10/19  nll(last 10)=0.9654  log_s=0.0000
+      log_T mean=0.0063  min=-0.1315  max=0.1761
+      log_T_logit=-0.1290
+    batch   19/19  nll(last 10)=0.9326  log_s=0.0000
+      log_T mean=0.0109  min=-0.1367  max=0.1918
+      log_T_logit=-0.1332
+  epoch  19/50  nll=0.9499  log_s=0.0000  lr_s=6.84e-03  lr_t_max=6.84e-03  elapsed=20m14s  eta=33m01s
+  log_T mean=0.0109  min=-0.1367  max=0.1918
+  log_T=[0.069, 0.073, 0.096, 0.090, 0.104, 0.084, 0.129, 0.143, 0.143, 0.046, 0.064, 0.007, 0.023, 0.122, 0.127, 0.192, -0.052, 0.068, 0.052, -0.053, -0.100, -0.059, -0.115, -0.079, -0.074, -0.079, -0.095, -0.097, -0.087, -0.122, -0.137, -0.136]
+  log_T_logit=-0.1332
+    batch   10/19  nll(last 10)=0.9595  log_s=0.0000
+      log_T mean=0.0109  min=-0.1367  max=0.1918
+      log_T_logit=-0.1332
+    batch   19/19  nll(last 10)=0.9379  log_s=0.0000
+      log_T mean=0.0158  min=-0.1419  max=0.2073
+      log_T_logit=-0.1373
+  epoch  20/50  nll=0.9493  log_s=0.0000  lr_s=6.55e-03  lr_t_max=6.55e-03  elapsed=21m18s  eta=31m57s
+  log_T mean=0.0158  min=-0.1419  max=0.2073
+  log_T=[0.075, 0.081, 0.106, 0.100, 0.115, 0.093, 0.142, 0.156, 0.157, 0.053, 0.075, 0.013, 0.032, 0.134, 0.142, 0.207, -0.049, 0.079, 0.060, -0.055, -0.105, -0.059, -0.119, -0.079, -0.073, -0.079, -0.097, -0.100, -0.090, -0.127, -0.142, -0.141]
+  log_T_logit=-0.1373
+    batch   10/19  nll(last 10)=0.9580  log_s=0.0000
+      log_T mean=0.0158  min=-0.1419  max=0.2073
+      log_T_logit=-0.1373
+    batch   19/19  nll(last 10)=0.9312  log_s=0.0000
+      log_T mean=0.0206  min=-0.1471  max=0.2224
+      log_T_logit=-0.1410
+  epoch  21/50  nll=0.9453  log_s=0.0000  lr_s=6.24e-03  lr_t_max=6.24e-03  elapsed=22m22s  eta=30m53s
+  log_T mean=0.0206  min=-0.1471  max=0.2224
+  log_T=[0.081, 0.088, 0.116, 0.110, 0.125, 0.101, 0.155, 0.169, 0.170, 0.061, 0.086, 0.019, 0.040, 0.145, 0.157, 0.222, -0.045, 0.089, 0.068, -0.057, -0.110, -0.060, -0.123, -0.079, -0.072, -0.078, -0.098, -0.103, -0.092, -0.131, -0.147, -0.147]
+  log_T_logit=-0.1410
+    batch   10/19  nll(last 10)=0.9551  log_s=0.0000
+      log_T mean=0.0206  min=-0.1471  max=0.2224
+      log_T_logit=-0.1410
+    batch   19/19  nll(last 10)=0.9255  log_s=0.0000
+      log_T mean=0.0255  min=-0.1523  max=0.2372
+      log_T_logit=-0.1444
+  epoch  22/50  nll=0.9411  log_s=0.0000  lr_s=5.94e-03  lr_t_max=5.94e-03  elapsed=23m25s  eta=29m49s
+  log_T mean=0.0255  min=-0.1523  max=0.2372
+  log_T=[0.087, 0.096, 0.125, 0.120, 0.136, 0.109, 0.167, 0.183, 0.183, 0.069, 0.097, 0.024, 0.047, 0.156, 0.172, 0.237, -0.042, 0.099, 0.076, -0.059, -0.115, -0.060, -0.127, -0.078, -0.070, -0.077, -0.099, -0.106, -0.093, -0.135, -0.152, -0.152]
+  log_T_logit=-0.1444
+    batch   10/19  nll(last 10)=0.9541  log_s=0.0000
+      log_T mean=0.0255  min=-0.1523  max=0.2372
+      log_T_logit=-0.1444
+    batch   19/19  nll(last 10)=0.9199  log_s=0.0000
+      log_T mean=0.0303  min=-0.1577  max=0.2516
+      log_T_logit=-0.1478
+  epoch  23/50  nll=0.9379  log_s=0.0000  lr_s=5.63e-03  lr_t_max=5.63e-03  elapsed=24m29s  eta=28m45s
+  log_T mean=0.0303  min=-0.1577  max=0.2516
+  log_T=[0.092, 0.103, 0.135, 0.129, 0.146, 0.117, 0.180, 0.196, 0.196, 0.076, 0.108, 0.030, 0.055, 0.166, 0.187, 0.252, -0.037, 0.109, 0.083, -0.061, -0.121, -0.060, -0.131, -0.077, -0.067, -0.076, -0.100, -0.109, -0.095, -0.140, -0.158, -0.158]
+  log_T_logit=-0.1478
+    batch   10/19  nll(last 10)=0.9534  log_s=0.0000
+      log_T mean=0.0303  min=-0.1577  max=0.2516
+      log_T_logit=-0.1478
+    batch   19/19  nll(last 10)=0.9279  log_s=0.0000
+      log_T mean=0.0352  min=-0.1635  max=0.2656
+      log_T_logit=-0.1512
+  epoch  24/50  nll=0.9414  log_s=0.0000  lr_s=5.31e-03  lr_t_max=5.31e-03  elapsed=25m33s  eta=27m41s
+  log_T mean=0.0352  min=-0.1635  max=0.2656
+  log_T=[0.098, 0.111, 0.145, 0.139, 0.156, 0.125, 0.192, 0.209, 0.209, 0.084, 0.120, 0.037, 0.064, 0.175, 0.201, 0.266, -0.032, 0.119, 0.090, -0.064, -0.126, -0.060, -0.135, -0.076, -0.064, -0.074, -0.101, -0.111, -0.097, -0.144, -0.163, -0.164]
+  log_T_logit=-0.1512
+    batch   10/19  nll(last 10)=0.9516  log_s=0.0000
+      log_T mean=0.0352  min=-0.1635  max=0.2656
+      log_T_logit=-0.1512
+    batch   19/19  nll(last 10)=0.9219  log_s=0.0000
+      log_T mean=0.0400  min=-0.1697  max=0.2793
+      log_T_logit=-0.1546
+  epoch  25/50  nll=0.9375  log_s=0.0000  lr_s=5.00e-03  lr_t_max=5.00e-03  elapsed=26m37s  eta=26m37s
+  log_T mean=0.0400  min=-0.1697  max=0.2793
+  log_T=[0.103, 0.118, 0.154, 0.148, 0.166, 0.133, 0.204, 0.221, 0.221, 0.092, 0.132, 0.044, 0.071, 0.183, 0.216, 0.279, -0.025, 0.129, 0.097, -0.067, -0.131, -0.060, -0.139, -0.073, -0.060, -0.073, -0.101, -0.114, -0.100, -0.149, -0.169, -0.170]
+  log_T_logit=-0.1546
+    batch   10/19  nll(last 10)=0.9528  log_s=0.0000
+      log_T mean=0.0400  min=-0.1697  max=0.2793
+      log_T_logit=-0.1546
+    batch   19/19  nll(last 10)=0.9133  log_s=0.0000
+      log_T mean=0.0441  min=-0.1762  max=0.2922
+      log_T_logit=-0.1582
+  epoch  26/50  nll=0.9341  log_s=0.0000  lr_s=4.69e-03  lr_t_max=4.69e-03  elapsed=27m41s  eta=25m33s
+  log_T mean=0.0441  min=-0.1762  max=0.2922
+  log_T=[0.108, 0.124, 0.161, 0.156, 0.175, 0.139, 0.215, 0.232, 0.232, 0.099, 0.143, 0.048, 0.078, 0.188, 0.230, 0.292, -0.018, 0.138, 0.102, -0.070, -0.137, -0.060, -0.142, -0.071, -0.055, -0.071, -0.102, -0.118, -0.102, -0.154, -0.175, -0.176]
+  log_T_logit=-0.1582
+    batch   10/19  nll(last 10)=0.9538  log_s=0.0000
+      log_T mean=0.0441  min=-0.1762  max=0.2922
+      log_T_logit=-0.1582
+    batch   19/19  nll(last 10)=0.9133  log_s=0.0000
+      log_T mean=0.0469  min=-0.1831  max=0.3039
+      log_T_logit=-0.1620
+  epoch  27/50  nll=0.9346  log_s=0.0000  lr_s=4.37e-03  lr_t_max=4.37e-03  elapsed=28m45s  eta=24m29s
+  log_T mean=0.0469  min=-0.1831  max=0.3039
+  log_T=[0.112, 0.129, 0.167, 0.162, 0.182, 0.144, 0.224, 0.241, 0.241, 0.102, 0.151, 0.050, 0.081, 0.190, 0.243, 0.304, -0.011, 0.147, 0.106, -0.073, -0.142, -0.061, -0.146, -0.068, -0.050, -0.069, -0.103, -0.122, -0.106, -0.160, -0.181, -0.183]
+  log_T_logit=-0.1620
+    batch   10/19  nll(last 10)=0.9492  log_s=0.0000
+      log_T mean=0.0469  min=-0.1831  max=0.3039
+      log_T_logit=-0.1620
+    batch   19/19  nll(last 10)=0.9069  log_s=0.0000
+      log_T mean=0.0481  min=-0.1903  max=0.3141
+      log_T_logit=-0.1661
+  epoch  28/50  nll=0.9291  log_s=0.0000  lr_s=4.06e-03  lr_t_max=4.06e-03  elapsed=29m49s  eta=23m26s
+  log_T mean=0.0481  min=-0.1903  max=0.3141
+  log_T=[0.114, 0.133, 0.170, 0.166, 0.186, 0.146, 0.230, 0.247, 0.247, 0.102, 0.156, 0.048, 0.080, 0.189, 0.253, 0.314, -0.006, 0.153, 0.108, -0.078, -0.148, -0.062, -0.151, -0.066, -0.044, -0.067, -0.104, -0.126, -0.109, -0.165, -0.187, -0.190]
+  log_T_logit=-0.1661
+    batch   10/19  nll(last 10)=0.9521  log_s=0.0000
+      log_T mean=0.0481  min=-0.1903  max=0.3141
+      log_T_logit=-0.1661
+    batch   19/19  nll(last 10)=0.9037  log_s=0.0000
+      log_T mean=0.0481  min=-0.1975  max=0.3228
+      log_T_logit=-0.1702
+  epoch  29/50  nll=0.9292  log_s=0.0000  lr_s=3.76e-03  lr_t_max=3.76e-03  elapsed=30m53s  eta=22m22s
+  log_T mean=0.0481  min=-0.1975  max=0.3228
+  log_T=[0.116, 0.135, 0.171, 0.167, 0.187, 0.146, 0.233, 0.250, 0.251, 0.100, 0.158, 0.045, 0.078, 0.187, 0.263, 0.323, -0.001, 0.157, 0.108, -0.082, -0.154, -0.063, -0.155, -0.064, -0.039, -0.066, -0.106, -0.130, -0.113, -0.171, -0.194, -0.197]
+  log_T_logit=-0.1702
+    batch   10/19  nll(last 10)=0.9544  log_s=0.0000
+      log_T mean=0.0481  min=-0.1975  max=0.3228
+      log_T_logit=-0.1702
+    batch   19/19  nll(last 10)=0.9018  log_s=0.0000
+      log_T mean=0.0471  min=-0.2045  max=0.3299
+      log_T_logit=-0.1744
+  epoch  30/50  nll=0.9295  log_s=0.0000  lr_s=3.45e-03  lr_t_max=3.45e-03  elapsed=31m57s  eta=21m18s
+  log_T mean=0.0471  min=-0.2045  max=0.3299
+  log_T=[0.116, 0.135, 0.171, 0.167, 0.187, 0.145, 0.234, 0.251, 0.252, 0.097, 0.158, 0.039, 0.075, 0.183, 0.270, 0.330, 0.002, 0.160, 0.107, -0.087, -0.160, -0.065, -0.159, -0.062, -0.033, -0.065, -0.107, -0.134, -0.117, -0.177, -0.200, -0.205]
+  log_T_logit=-0.1744
+    batch   10/19  nll(last 10)=0.9554  log_s=0.0000
+      log_T mean=0.0471  min=-0.2045  max=0.3299
+      log_T_logit=-0.1744
+    batch   19/19  nll(last 10)=0.9109  log_s=0.0000
+      log_T mean=0.0456  min=-0.2111  max=0.3359
+      log_T_logit=-0.1785
+  epoch  31/50  nll=0.9343  log_s=0.0000  lr_s=3.16e-03  lr_t_max=3.16e-03  elapsed=33m01s  eta=20m14s
+  log_T mean=0.0456  min=-0.2111  max=0.3359
+  log_T=[0.115, 0.135, 0.169, 0.165, 0.186, 0.142, 0.234, 0.250, 0.252, 0.093, 0.156, 0.034, 0.070, 0.178, 0.276, 0.336, 0.004, 0.161, 0.105, -0.092, -0.166, -0.066, -0.163, -0.060, -0.028, -0.064, -0.109, -0.138, -0.121, -0.182, -0.206, -0.211]
+  log_T_logit=-0.1785
+    batch   10/19  nll(last 10)=0.9569  log_s=0.0000
+      log_T mean=0.0456  min=-0.2111  max=0.3359
+      log_T_logit=-0.1785
+    batch   19/19  nll(last 10)=0.9064  log_s=0.0000
+      log_T mean=0.0439  min=-0.2171  max=0.3409
+      log_T_logit=-0.1822
+  epoch  32/50  nll=0.9330  log_s=0.0000  lr_s=2.87e-03  lr_t_max=2.87e-03  elapsed=34m05s  eta=19m10s
+  log_T mean=0.0439  min=-0.2171  max=0.3409
+  log_T=[0.115, 0.135, 0.168, 0.164, 0.185, 0.140, 0.233, 0.249, 0.251, 0.089, 0.154, 0.028, 0.066, 0.174, 0.282, 0.341, 0.005, 0.162, 0.103, -0.096, -0.171, -0.067, -0.167, -0.057, -0.023, -0.063, -0.110, -0.142, -0.124, -0.187, -0.211, -0.217]
+  log_T_logit=-0.1822
+    batch   10/19  nll(last 10)=0.9545  log_s=0.0000
+      log_T mean=0.0439  min=-0.2171  max=0.3409
+      log_T_logit=-0.1822
+    batch   19/19  nll(last 10)=0.9175  log_s=0.0000
+      log_T mean=0.0424  min=-0.2225  max=0.3453
+      log_T_logit=-0.1857
+  epoch  33/50  nll=0.9369  log_s=0.0000  lr_s=2.59e-03  lr_t_max=2.59e-03  elapsed=35m09s  eta=18m06s
+  log_T mean=0.0424  min=-0.2225  max=0.3453
+  log_T=[0.114, 0.134, 0.166, 0.162, 0.183, 0.137, 0.232, 0.248, 0.251, 0.085, 0.151, 0.023, 0.062, 0.170, 0.287, 0.345, 0.006, 0.162, 0.101, -0.100, -0.176, -0.068, -0.170, -0.055, -0.018, -0.062, -0.111, -0.145, -0.127, -0.191, -0.216, -0.223]
+  log_T_logit=-0.1857
+    batch   10/19  nll(last 10)=0.9551  log_s=0.0000
+      log_T mean=0.0424  min=-0.2225  max=0.3453
+      log_T_logit=-0.1857
+    batch   19/19  nll(last 10)=0.9143  log_s=0.0000
+      log_T mean=0.0413  min=-0.2273  max=0.3496
+      log_T_logit=-0.1888
+  epoch  34/50  nll=0.9358  log_s=0.0000  lr_s=2.32e-03  lr_t_max=2.32e-03  elapsed=36m12s  eta=17m02s
+  log_T mean=0.0413  min=-0.2273  max=0.3496
+  log_T=[0.114, 0.134, 0.165, 0.161, 0.182, 0.136, 0.232, 0.247, 0.251, 0.082, 0.150, 0.019, 0.059, 0.166, 0.291, 0.350, 0.008, 0.162, 0.099, -0.104, -0.180, -0.069, -0.173, -0.053, -0.013, -0.061, -0.112, -0.148, -0.130, -0.195, -0.220, -0.227]
+  log_T_logit=-0.1888
+    batch   10/19  nll(last 10)=0.9582  log_s=0.0000
+      log_T mean=0.0413  min=-0.2273  max=0.3496
+      log_T_logit=-0.1888
+    batch   19/19  nll(last 10)=0.9143  log_s=0.0000
+      log_T mean=0.0406  min=-0.2313  max=0.3537
+      log_T_logit=-0.1915
+  epoch  35/50  nll=0.9374  log_s=0.0000  lr_s=2.06e-03  lr_t_max=2.06e-03  elapsed=37m16s  eta=15m58s
+  log_T mean=0.0406  min=-0.2313  max=0.3537
+  log_T=[0.113, 0.134, 0.164, 0.160, 0.182, 0.134, 0.232, 0.247, 0.251, 0.079, 0.149, 0.015, 0.056, 0.163, 0.296, 0.354, 0.010, 0.163, 0.098, -0.107, -0.184, -0.070, -0.175, -0.051, -0.009, -0.059, -0.112, -0.151, -0.132, -0.198, -0.223, -0.231]
+  log_T_logit=-0.1915
+    batch   10/19  nll(last 10)=0.9564  log_s=0.0000
+      log_T mean=0.0406  min=-0.2313  max=0.3537
+      log_T_logit=-0.1915
+    batch   19/19  nll(last 10)=0.9105  log_s=0.0000
+      log_T mean=0.0402  min=-0.2347  max=0.3577
+      log_T_logit=-0.1939
+  epoch  36/50  nll=0.9346  log_s=0.0000  lr_s=1.81e-03  lr_t_max=1.81e-03  elapsed=38m20s  eta=14m54s
+  log_T mean=0.0402  min=-0.2347  max=0.3577
+  log_T=[0.113, 0.134, 0.164, 0.160, 0.182, 0.133, 0.232, 0.247, 0.251, 0.077, 0.148, 0.012, 0.054, 0.161, 0.300, 0.358, 0.012, 0.165, 0.097, -0.110, -0.187, -0.070, -0.177, -0.049, -0.005, -0.057, -0.112, -0.153, -0.133, -0.201, -0.226, -0.235]
+  log_T_logit=-0.1939
+    batch   10/19  nll(last 10)=0.9530  log_s=0.0000
+      log_T mean=0.0402  min=-0.2347  max=0.3577
+      log_T_logit=-0.1939
+    batch   19/19  nll(last 10)=0.9159  log_s=0.0000
+      log_T mean=0.0401  min=-0.2377  max=0.3616
+      log_T_logit=-0.1960
+  epoch  37/50  nll=0.9354  log_s=0.0000  lr_s=1.58e-03  lr_t_max=1.58e-03  elapsed=39m24s  eta=13m50s
+  log_T mean=0.0401  min=-0.2377  max=0.3616
+  log_T=[0.114, 0.135, 0.164, 0.160, 0.182, 0.133, 0.233, 0.247, 0.252, 0.076, 0.149, 0.010, 0.052, 0.159, 0.304, 0.362, 0.015, 0.167, 0.097, -0.112, -0.190, -0.070, -0.179, -0.048, -0.002, -0.056, -0.112, -0.154, -0.135, -0.203, -0.229, -0.238]
+  log_T_logit=-0.1960
+    batch   10/19  nll(last 10)=0.9486  log_s=0.0000
+      log_T mean=0.0401  min=-0.2377  max=0.3616
+      log_T_logit=-0.1960
+    batch   19/19  nll(last 10)=0.9062  log_s=0.0000
+      log_T mean=0.0401  min=-0.2402  max=0.3651
+      log_T_logit=-0.1977
+  epoch  38/50  nll=0.9285  log_s=0.0000  lr_s=1.36e-03  lr_t_max=1.36e-03  elapsed=40m28s  eta=12m46s
+  log_T mean=0.0401  min=-0.2402  max=0.3651
+  log_T=[0.114, 0.135, 0.164, 0.160, 0.182, 0.132, 0.234, 0.248, 0.253, 0.075, 0.149, 0.008, 0.051, 0.158, 0.308, 0.365, 0.018, 0.169, 0.097, -0.114, -0.192, -0.071, -0.180, -0.046, 0.002, -0.055, -0.112, -0.156, -0.136, -0.205, -0.231, -0.240]
+  log_T_logit=-0.1977
+    batch   10/19  nll(last 10)=0.9577  log_s=0.0000
+      log_T mean=0.0401  min=-0.2402  max=0.3651
+      log_T_logit=-0.1977
+    batch   19/19  nll(last 10)=0.9116  log_s=0.0000
+      log_T mean=0.0402  min=-0.2424  max=0.3682
+      log_T_logit=-0.1993
+  epoch  39/50  nll=0.9359  log_s=0.0000  lr_s=1.15e-03  lr_t_max=1.15e-03  elapsed=41m32s  eta=11m42s
+  log_T mean=0.0402  min=-0.2424  max=0.3682
+  log_T=[0.114, 0.136, 0.164, 0.160, 0.182, 0.132, 0.235, 0.249, 0.254, 0.074, 0.150, 0.007, 0.050, 0.156, 0.311, 0.368, 0.020, 0.170, 0.096, -0.115, -0.194, -0.071, -0.181, -0.045, 0.004, -0.053, -0.112, -0.157, -0.137, -0.207, -0.233, -0.242]
+  log_T_logit=-0.1993
+    batch   10/19  nll(last 10)=0.9481  log_s=0.0000
+      log_T mean=0.0402  min=-0.2424  max=0.3682
+      log_T_logit=-0.1993
+    batch   19/19  nll(last 10)=0.9075  log_s=0.0000
+      log_T mean=0.0404  min=-0.2441  max=0.3709
+      log_T_logit=-0.2005
+  epoch  40/50  nll=0.9288  log_s=0.0000  lr_s=9.55e-04  lr_t_max=9.55e-04  elapsed=42m36s  eta=10m39s
+  log_T mean=0.0404  min=-0.2441  max=0.3709
+  log_T=[0.114, 0.136, 0.164, 0.161, 0.183, 0.132, 0.236, 0.250, 0.256, 0.073, 0.151, 0.006, 0.050, 0.155, 0.314, 0.371, 0.022, 0.172, 0.096, -0.117, -0.196, -0.071, -0.182, -0.044, 0.006, -0.052, -0.112, -0.158, -0.138, -0.208, -0.234, -0.244]
+  log_T_logit=-0.2005
+    batch   10/19  nll(last 10)=0.9549  log_s=0.0000
+      log_T mean=0.0404  min=-0.2441  max=0.3709
+      log_T_logit=-0.2005
+    batch   19/19  nll(last 10)=0.9193  log_s=0.0000
+      log_T mean=0.0406  min=-0.2455  max=0.3732
+      log_T_logit=-0.2015
+  epoch  41/50  nll=0.9380  log_s=0.0000  lr_s=7.78e-04  lr_t_max=7.78e-04  elapsed=43m40s  eta=9m35s
+  log_T mean=0.0406  min=-0.2455  max=0.3732
+  log_T=[0.114, 0.136, 0.164, 0.161, 0.183, 0.132, 0.237, 0.251, 0.256, 0.073, 0.151, 0.005, 0.049, 0.155, 0.317, 0.373, 0.024, 0.174, 0.096, -0.118, -0.197, -0.071, -0.183, -0.043, 0.008, -0.051, -0.112, -0.159, -0.138, -0.209, -0.235, -0.245]
+  log_T_logit=-0.2015
+    batch   10/19  nll(last 10)=0.9538  log_s=0.0000
+      log_T mean=0.0406  min=-0.2455  max=0.3732
+      log_T_logit=-0.2015
+    batch   19/19  nll(last 10)=0.9065  log_s=0.0000
+      log_T mean=0.0408  min=-0.2466  max=0.3750
+      log_T_logit=-0.2023
+  epoch  42/50  nll=0.9314  log_s=0.0000  lr_s=6.18e-04  lr_t_max=6.18e-04  elapsed=44m44s  eta=8m31s
+  log_T mean=0.0408  min=-0.2466  max=0.3750
+  log_T=[0.114, 0.137, 0.165, 0.161, 0.184, 0.132, 0.238, 0.252, 0.257, 0.073, 0.152, 0.005, 0.049, 0.154, 0.319, 0.375, 0.026, 0.175, 0.096, -0.119, -0.198, -0.071, -0.184, -0.042, 0.010, -0.050, -0.112, -0.159, -0.139, -0.210, -0.236, -0.247]
+  log_T_logit=-0.2023
+    batch   10/19  nll(last 10)=0.9459  log_s=0.0000
+      log_T mean=0.0408  min=-0.2466  max=0.3750
+      log_T_logit=-0.2023
+    batch   19/19  nll(last 10)=0.9181  log_s=0.0000
+      log_T mean=0.0410  min=-0.2475  max=0.3765
+      log_T_logit=-0.2030
+  epoch  43/50  nll=0.9327  log_s=0.0000  lr_s=4.76e-04  lr_t_max=4.76e-04  elapsed=45m48s  eta=7m27s
+  log_T mean=0.0410  min=-0.2475  max=0.3765
+  log_T=[0.115, 0.137, 0.165, 0.161, 0.184, 0.132, 0.238, 0.252, 0.258, 0.072, 0.153, 0.004, 0.049, 0.154, 0.320, 0.377, 0.027, 0.176, 0.096, -0.120, -0.199, -0.071, -0.184, -0.041, 0.011, -0.050, -0.112, -0.160, -0.139, -0.211, -0.237, -0.247]
+  log_T_logit=-0.2030
+    batch   10/19  nll(last 10)=0.9546  log_s=0.0000
+      log_T mean=0.0410  min=-0.2475  max=0.3765
+      log_T_logit=-0.2030
+    batch   19/19  nll(last 10)=0.9101  log_s=0.0000
+      log_T mean=0.0411  min=-0.2481  max=0.3777
+      log_T_logit=-0.2034
+  epoch  44/50  nll=0.9335  log_s=0.0000  lr_s=3.51e-04  lr_t_max=3.51e-04  elapsed=46m52s  eta=6m23s
+  log_T mean=0.0411  min=-0.2481  max=0.3777
+  log_T=[0.115, 0.137, 0.165, 0.162, 0.184, 0.132, 0.239, 0.252, 0.258, 0.072, 0.153, 0.004, 0.049, 0.153, 0.321, 0.378, 0.028, 0.177, 0.096, -0.120, -0.200, -0.071, -0.185, -0.040, 0.012, -0.049, -0.112, -0.160, -0.140, -0.211, -0.238, -0.248]
+  log_T_logit=-0.2034
+    batch   10/19  nll(last 10)=0.9501  log_s=0.0000
+      log_T mean=0.0411  min=-0.2481  max=0.3777
+      log_T_logit=-0.2034
+    batch   19/19  nll(last 10)=0.9053  log_s=0.0000
+      log_T mean=0.0411  min=-0.2486  max=0.3785
+      log_T_logit=-0.2038
+  epoch  45/50  nll=0.9288  log_s=0.0000  lr_s=2.45e-04  lr_t_max=2.45e-04  elapsed=47m56s  eta=5m19s
+  log_T mean=0.0411  min=-0.2486  max=0.3785
+  log_T=[0.115, 0.137, 0.165, 0.162, 0.184, 0.132, 0.239, 0.253, 0.259, 0.072, 0.153, 0.003, 0.048, 0.153, 0.322, 0.378, 0.029, 0.178, 0.096, -0.120, -0.200, -0.071, -0.185, -0.040, 0.013, -0.049, -0.111, -0.160, -0.140, -0.212, -0.238, -0.249]
+  log_T_logit=-0.2038
+    batch   10/19  nll(last 10)=0.9520  log_s=0.0000
+      log_T mean=0.0411  min=-0.2486  max=0.3785
+      log_T_logit=-0.2038
+    batch   19/19  nll(last 10)=0.9046  log_s=0.0000
+      log_T mean=0.0412  min=-0.2490  max=0.3790
+      log_T_logit=-0.2041
+  epoch  46/50  nll=0.9296  log_s=0.0000  lr_s=1.57e-04  lr_t_max=1.57e-04  elapsed=49m00s  eta=4m15s
+  log_T mean=0.0412  min=-0.2490  max=0.3790
+  log_T=[0.115, 0.138, 0.165, 0.162, 0.184, 0.132, 0.239, 0.253, 0.259, 0.072, 0.153, 0.003, 0.048, 0.153, 0.323, 0.379, 0.029, 0.178, 0.096, -0.121, -0.201, -0.071, -0.185, -0.040, 0.013, -0.048, -0.111, -0.161, -0.140, -0.212, -0.238, -0.249]
+  log_T_logit=-0.2041
+    batch   10/19  nll(last 10)=0.9506  log_s=0.0000
+      log_T mean=0.0412  min=-0.2490  max=0.3790
+      log_T_logit=-0.2041
+    batch   19/19  nll(last 10)=0.9080  log_s=0.0000
+      log_T mean=0.0412  min=-0.2492  max=0.3794
+      log_T_logit=-0.2042
+  epoch  47/50  nll=0.9304  log_s=0.0000  lr_s=8.86e-05  lr_t_max=8.86e-05  elapsed=50m04s  eta=3m11s
+  log_T mean=0.0412  min=-0.2492  max=0.3794
+  log_T=[0.115, 0.138, 0.165, 0.162, 0.184, 0.132, 0.239, 0.253, 0.259, 0.072, 0.153, 0.003, 0.048, 0.153, 0.323, 0.379, 0.030, 0.178, 0.096, -0.121, -0.201, -0.071, -0.185, -0.040, 0.014, -0.048, -0.111, -0.161, -0.140, -0.212, -0.239, -0.249]
+  log_T_logit=-0.2042
+    batch   10/19  nll(last 10)=0.9560  log_s=0.0000
+      log_T mean=0.0412  min=-0.2492  max=0.3794
+      log_T_logit=-0.2042
+    batch   19/19  nll(last 10)=0.9054  log_s=0.0000
+      log_T mean=0.0412  min=-0.2493  max=0.3796
+      log_T_logit=-0.2043
+  epoch  48/50  nll=0.9320  log_s=0.0000  lr_s=3.94e-05  lr_t_max=3.94e-05  elapsed=51m08s  eta=2m07s
+  log_T mean=0.0412  min=-0.2493  max=0.3796
+  log_T=[0.115, 0.138, 0.165, 0.162, 0.184, 0.132, 0.239, 0.253, 0.259, 0.072, 0.153, 0.003, 0.048, 0.153, 0.323, 0.380, 0.030, 0.179, 0.096, -0.121, -0.201, -0.071, -0.185, -0.040, 0.014, -0.048, -0.111, -0.161, -0.140, -0.212, -0.239, -0.249]
+  log_T_logit=-0.2043
+    batch   10/19  nll(last 10)=0.9545  log_s=0.0000
+      log_T mean=0.0412  min=-0.2493  max=0.3796
+      log_T_logit=-0.2043
+    batch   19/19  nll(last 10)=0.9150  log_s=0.0000
+      log_T mean=0.0412  min=-0.2494  max=0.3797
+      log_T_logit=-0.2044
+  epoch  49/50  nll=0.9358  log_s=0.0000  lr_s=9.87e-06  lr_t_max=9.87e-06  elapsed=52m11s  eta=1m03s
+  log_T mean=0.0412  min=-0.2494  max=0.3797
+  log_T=[0.115, 0.138, 0.165, 0.162, 0.184, 0.132, 0.240, 0.253, 0.259, 0.072, 0.153, 0.003, 0.048, 0.153, 0.323, 0.380, 0.030, 0.179, 0.096, -0.121, -0.201, -0.071, -0.185, -0.039, 0.014, -0.048, -0.111, -0.161, -0.140, -0.212, -0.239, -0.249]
+  log_T_logit=-0.2044
+    batch   10/19  nll(last 10)=0.9469  log_s=0.0000
+      log_T mean=0.0412  min=-0.2494  max=0.3797
+      log_T_logit=-0.2044
+    batch   19/19  nll(last 10)=0.9023  log_s=0.0000
+      log_T mean=0.0412  min=-0.2494  max=0.3797
+      log_T_logit=-0.2044
+  epoch  50/50  nll=0.9258  log_s=0.0000  lr_s=0.00e+00  lr_t_max=0.00e+00  elapsed=53m15s  eta=0m00s
+  log_T mean=0.0412  min=-0.2494  max=0.3797
+  log_T=[0.115, 0.138, 0.165, 0.162, 0.184, 0.132, 0.240, 0.253, 0.259, 0.072, 0.153, 0.003, 0.048, 0.153, 0.323, 0.380, 0.030, 0.179, 0.096, -0.121, -0.201, -0.071, -0.185, -0.039, 0.014, -0.048, -0.111, -0.161, -0.140, -0.212, -0.239, -0.249]
+  log_T_logit=-0.2044
+  Best calib NLL: 0.9258
+eval:   0%|          | 0/37 [00:00<?, ?it/s]eval:   3%|▎         | 1/37 [00:00<00:17,  2.11it/s]eval:   5%|▌         | 2/37 [00:00<00:15,  2.25it/s]eval:   8%|▊         | 3/37 [00:01<00:17,  1.96it/s]eval:  11%|█         | 4/37 [00:02<00:18,  1.81it/s]eval:  14%|█▎        | 5/37 [00:02<00:20,  1.59it/s]eval:  16%|█▌        | 6/37 [00:03<00:18,  1.68it/s]eval:  19%|█▉        | 7/37 [00:04<00:18,  1.64it/s]eval:  22%|██▏       | 8/37 [00:04<00:16,  1.76it/s]eval:  24%|██▍       | 9/37 [00:05<00:15,  1.80it/s]eval:  27%|██▋       | 10/37 [00:05<00:14,  1.82it/s]eval:  30%|██▉       | 11/37 [00:06<00:15,  1.72it/s]eval:  32%|███▏      | 12/37 [00:06<00:14,  1.76it/s]eval:  35%|███▌      | 13/37 [00:07<00:13,  1.79it/s]eval:  38%|███▊      | 14/37 [00:08<00:14,  1.64it/s]eval:  41%|████      | 15/37 [00:08<00:12,  1.71it/s]eval:  43%|████▎     | 16/37 [00:09<00:11,  1.75it/s]eval:  46%|████▌     | 17/37 [00:09<00:10,  1.85it/s]eval:  49%|████▊     | 18/37 [00:10<00:10,  1.73it/s]eval:  51%|█████▏    | 19/37 [00:10<00:11,  1.61it/s]eval:  54%|█████▍    | 20/37 [00:11<00:10,  1.61it/s]eval:  57%|█████▋    | 21/37 [00:12<00:09,  1.61it/s]eval:  59%|█████▉    | 22/37 [00:12<00:09,  1.67it/s]eval:  62%|██████▏   | 23/37 [00:13<00:08,  1.71it/s]eval:  65%|██████▍   | 24/37 [00:13<00:06,  1.93it/s]eval:  68%|██████▊   | 25/37 [00:14<00:06,  1.86it/s]eval:  70%|███████   | 26/37 [00:14<00:05,  1.86it/s]eval:  73%|███████▎  | 27/37 [00:15<00:05,  1.81it/s]eval:  76%|███████▌  | 28/37 [00:15<00:04,  1.83it/s]eval:  78%|███████▊  | 29/37 [00:16<00:04,  1.84it/s]eval:  81%|████████  | 30/37 [00:17<00:03,  1.80it/s]eval:  84%|████████▍ | 31/37 [00:17<00:03,  1.80it/s]eval:  86%|████████▋ | 32/37 [00:18<00:02,  1.89it/s]eval:  89%|████████▉ | 33/37 [00:18<00:02,  1.77it/s]eval:  92%|█████████▏| 34/37 [00:19<00:01,  1.79it/s]eval:  95%|█████████▍| 35/37 [00:19<00:01,  1.85it/s]eval:  97%|█████████▋| 36/37 [00:20<00:00,  1.86it/s]eval: 100%|██████████| 37/37 [00:20<00:00,  1.82it/s]                                                     eval:   0%|          | 0/37 [00:00<?, ?it/s]eval:   3%|▎         | 1/37 [00:00<00:27,  1.32it/s]eval:   5%|▌         | 2/37 [00:01<00:23,  1.48it/s]eval:   8%|▊         | 3/37 [00:01<00:20,  1.64it/s]eval:  11%|█         | 4/37 [00:02<00:20,  1.58it/s]eval:  14%|█▎        | 5/37 [00:03<00:21,  1.50it/s]eval:  16%|█▌        | 6/37 [00:03<00:19,  1.59it/s]eval:  19%|█▉        | 7/37 [00:04<00:17,  1.72it/s]eval:  22%|██▏       | 8/37 [00:04<00:16,  1.75it/s]eval:  24%|██▍       | 9/37 [00:05<00:15,  1.83it/s]eval:  27%|██▋       | 10/37 [00:05<00:15,  1.79it/s]eval:  30%|██▉       | 11/37 [00:06<00:15,  1.73it/s]eval:  32%|███▏      | 12/37 [00:07<00:14,  1.77it/s]eval:  35%|███▌      | 13/37 [00:07<00:12,  1.92it/s]eval:  38%|███▊      | 14/37 [00:07<00:11,  2.04it/s]eval:  41%|████      | 15/37 [00:08<00:10,  2.04it/s]eval:  43%|████▎     | 16/37 [00:09<00:11,  1.85it/s]eval:  46%|████▌     | 17/37 [00:09<00:11,  1.75it/s]eval:  49%|████▊     | 18/37 [00:10<00:10,  1.78it/s]eval:  51%|█████▏    | 19/37 [00:10<00:09,  1.92it/s]eval:  54%|█████▍    | 20/37 [00:11<00:08,  2.05it/s]eval:  57%|█████▋    | 21/37 [00:11<00:08,  1.87it/s]eval:  59%|█████▉    | 22/37 [00:12<00:08,  1.82it/s]eval:  62%|██████▏   | 23/37 [00:12<00:07,  1.83it/s]eval:  65%|██████▍   | 24/37 [00:13<00:07,  1.79it/s]eval:  68%|██████▊   | 25/37 [00:14<00:06,  1.82it/s]eval:  70%|███████   | 26/37 [00:14<00:05,  1.83it/s]eval:  73%|███████▎  | 27/37 [00:15<00:05,  1.89it/s]eval:  76%|███████▌  | 28/37 [00:15<00:04,  1.95it/s]eval:  78%|███████▊  | 29/37 [00:16<00:04,  1.97it/s]eval:  81%|████████  | 30/37 [00:16<00:03,  1.92it/s]eval:  84%|████████▍ | 31/37 [00:17<00:03,  1.89it/s]eval:  86%|████████▋ | 32/37 [00:17<00:02,  1.83it/s]eval:  89%|████████▉ | 33/37 [00:18<00:02,  1.84it/s]eval:  92%|█████████▏| 34/37 [00:18<00:01,  1.85it/s]eval:  95%|█████████▍| 35/37 [00:19<00:01,  1.80it/s]eval:  97%|█████████▋| 36/37 [00:19<00:00,  1.74it/s]eval: 100%|██████████| 37/37 [00:20<00:00,  1.85it/s]                                                       Val:  {'accuracy': 0.6271186470985413, 'nll': 0.9395784139633179}
+  Eval: {'accuracy': 0.6305084824562073, 'nll': 0.9426203370094299, 'loss': 0.9426203370094299, 'brier': 0.49898383021354675, 'ece': 6.247392654418945, 'ace': 9.515734672546387, 'auc': 21.207307815551758, 'C@0.001': 0.6779661178588867, 'C@0.005': 0.6779661178588867, 'C@0.01': 0.6779661178588867, 'C@0.02': 0.6779661178588867, 'C@0.05': 0.6779661178588867, 'C@0.1': 23.05084800720215, 'C@0.2': 51.52542495727539, 'C@0.3': 76.94915771484375}
+  Saved calibration params → outputs_laplace/ARC-Challenge/meta-llama/Llama-2-7b-chat-hf_lora_lmhead_16_0.1_5e-05_seed4/step_4000/calib_params_per_layer_logit.pt
+
+All results saved to ./outputs/ARC-Challenge/meta-llama/Llama-2-7b-chat-hf_lora_lmhead_16_0.1_5e-05_seed4/step_4000/all_results_vp_kron_all_homo_100_rmsmvp_swigluexact_epochs50_const_posterior.json
+[rank0]:[W505 18:44:42.031052014 ProcessGroupNCCL.cpp:1496] Warning: WARNING: destroy_process_group() was not called before program exit, which can leak resources. For more info, please see https://pytorch.org/docs/stable/distributed.html#shutdown (function operator())

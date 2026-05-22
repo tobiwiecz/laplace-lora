@@ -1,0 +1,18 @@
+{
+  "task": "openbookqa",
+  "seed": "seed1",
+  "load_step": 4000,
+  "batch_size": 1,
+  "n_mc_vp": 100,
+  "n_mc_glm": 100000,
+  "compile_map": false,
+  "compile_vp": true,
+  "map_ms_mean": 32.78069725036621,
+  "map_ms_std": 0.011059570345394397,
+  "vp_ms_mean": 91.89181594848633,
+  "vp_ms_std": 0.022031535745878766,
+  "glm_dist_ms_mean": 600.2895812988281,
+  "glm_dist_ms_std": 3.194230019321584,
+  "glm_full_ms_mean": 583.6125244140625,
+  "glm_full_ms_std": 1.5659783469045354
+}

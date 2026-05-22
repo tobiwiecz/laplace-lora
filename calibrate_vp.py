@@ -11,12 +11,13 @@ scalars on the validation NLL:
          VP formulas (RMSNorm, SwiGLU, attention mixing) track the true
          variance accumulation.
 
-Five parameterisation variants (flags at top of file):
+Parameterisation variants (flags at top of file):
   log_s_only         — full backbone VP, no temperature scaling; log_s (1 param)
+  log_s_per_block    — phase-1: per-layer log_s[N] (N params)
   global             — full backbone VP; log_s + global log_T (2 params)
   per_layer          — full backbone VP; log_s + log_T[N] (N+1 params)
   per_sub_block      — full backbone VP; log_s + log_T[N,2] (2N+1 params)
-  per_sub_block_logit— above + log_T_logit on final logits (2N+2 params)
+  per_sub_block_logit— phase-2: log_s frozen + log_T_attn + log_T_mlp + log_T_logit (3 params)
 
 VP methods for backbone components:
   RMSNorm : streamlined or mvp (controlled by RMS_NORM_METHOD)
@@ -29,6 +30,7 @@ the backbone VP by recomputing sub-block activations during backward.
 
 import argparse
 import json
+import logging
 import math
 import os
 import re
@@ -37,6 +39,7 @@ import time
 import warnings
 
 warnings.filterwarnings("ignore", category=FutureWarning, module="torch.nn.modules.module")
+logging.getLogger("accelerate.utils.other").setLevel(logging.ERROR)
 
 import torch
 import torch.nn as nn
@@ -102,25 +105,34 @@ logger = get_logger(__name__)
 # ══════════════════════════════════════════════════════════════════════════════
 # CONFIGURATION
 # ══════════════════════════════════════════════════════════════════════════════
-LR               = 3e-2   # learning rate for all calibration parameters
+FIXED_LOG_S      = -4.0   # fixed posterior scale (exp(-4) ≈ 0.018); not learned
+LR               = 1e-2   # learning rate for log_s (max, at last layer for per-block; unused when fixed)
+LR_T             = 1e-1   # learning rate for log_T (max at last layer); log_T_logit gets 10×
+WEIGHT_DECAY_T   = 1e-2   # weight decay for per-layer log_T (pulls toward 0 = T→1)
+LR_MIN_FACTOR    = 0.1    # min LR at layer 0 = LR_MIN_FACTOR * max LR (linear ramp across layers)
 INIT_LOG_S       = None   # if set, skip phase-1 and use this value directly (e.g. -0.63)
 FINETUNE_S       = False  # True → backbone variants optimize log_s at LR_S_FINETUNE; False → freeze it
 LR_S_FINETUNE    = 1e-3   # LR for log_s in backbone variant phase (only used if FINETUNE_S=True)
-N_EPOCHS         = 50     # calibration epochs
+N_EPOCHS         = 50     # calibration epochs (phase-2: T parameters); overridden by --total_steps
+N_EPOCHS_S       = 5      # calibration epochs for phase-1 (log_s); overridden by --total_steps_s
 CALIB_BATCH_SIZE = 16     # micro-batch size per gradient step
 GRAD_ACCUM       = 16     # accumulate this many micro-batches per optimizer step
-N_MC_CALIB       = 100    # MC samples for calibration NLL
+N_MC_CALIB       = 100    # MC samples per NLL estimate during calibration
 N_MC_EVAL        = 1000   # MC samples for final evaluation
-RMS_NORM_METHOD  = "mvp"    # "streamlined" or "mvp"
-SWIGLU_METHOD    = "exact"  # "delta" or "exact" (Hermite k=3 + product var + cross-cov)
+RMS_NORM_METHOD  = "mvp"      # "streamlined" or "mvp"
+SWIGLU_METHOD    = "exact"    # "delta" or "exact" (Hermite k=3 + product var + cross-cov)
+ATTN_VAR_MODE    = "value_only"  # "value_only" or "full" (delta method through softmax for Q)
 USE_GRAD_CHECKPOINT = True   # recompute sub-block activations during backward
 
 # Which variants to run (flip flags to activate)
-RUN_LOG_S_ONLY          = False   # full backbone VP, no T scaling; log_s only (phase-1)
-RUN_GLOBAL              = False  # full backbone VP; log_s + global T
-RUN_PER_LAYER           = False  # full backbone VP; log_s + T per layer
-RUN_PER_SUB_BLOCK       = False  # full backbone VP; log_s + T per (attn,MLP)
-RUN_PER_SUB_BLOCK_LOGIT = True  # above + T on final logits
+RUN_LOG_S_ONLY          = False   # full backbone VP, no T scaling; global log_s (phase-1)
+RUN_LOG_S_PER_BLOCK     = False   # alternative phase-1: per-layer log_s[N] (mutually exclusive with LOG_S_ONLY)
+RUN_GLOBAL              = False   # full backbone VP; log_s + global T
+RUN_PER_LAYER           = False   # full backbone VP; log_s + T per layer
+RUN_PER_SUB_BLOCK       = False   # full backbone VP; log_s + T per (attn,MLP)
+RUN_PER_SUB_BLOCK_LOGIT = False   # shared log_T_attn + log_T_mlp + log_T_logit (3 params)
+RUN_PER_LAYER_LOGIT     = True    # per-block T[N] + log_T_logit; log_s fixed at FIXED_LOG_S
+RUN_PER_BLOCK_ST        = False   # single phase: per-block log_s[N] + log_T[N] + log_T_logit
 # ══════════════════════════════════════════════════════════════════════════════
 
 
@@ -156,17 +168,57 @@ def parse_args():
                              "'exact' = Hermite k=3 + product var + cross-cov")
     p.add_argument("--rms_norm_method",     type=str,   default=RMS_NORM_METHOD,
                    choices=["streamlined", "mvp"])
+    p.add_argument("--attn_var_mode",       type=str,   default=ATTN_VAR_MODE,
+                   choices=["value_only", "full"],
+                   help="Attention VP: 'value_only' = only V-path uncertainty; "
+                        "'full' = Q uncertainty via delta-method linearisation through softmax")
     p.add_argument("--n_epochs",             type=int,   default=N_EPOCHS)
+    p.add_argument("--n_epochs_s",           type=int,   default=N_EPOCHS_S,
+                   help="Epochs for phase-1 (log_s only); defaults to ~1/4 of --n_epochs")
     p.add_argument("--total_steps",          type=int,   default=None,
                    help="If set, overrides --n_epochs: n_epochs = ceil(total_steps / steps_per_epoch)")
+    p.add_argument("--total_steps_s",       type=int,   default=None,
+                   help="If set, overrides --n_epochs_s for phase-1 (log_s) the same way")
     p.add_argument("--calib_batch_size",    type=int,   default=CALIB_BATCH_SIZE)
     p.add_argument("--grad_accum",          type=int,   default=GRAD_ACCUM)
-    p.add_argument("--lr",                  type=float, default=LR)
+    p.add_argument("--lr",                  type=float, default=LR,
+                   help="LR for log_s (max LR at last layer for per-block)")
+    p.add_argument("--lr_t",               type=float, default=LR_T,
+                   help="LR for log_T / log_T_logit (max LR at last layer)")
+    p.add_argument("--lr_min_factor",      type=float, default=LR_MIN_FACTOR,
+                   help="Min LR at layer 0 = lr_min_factor * max_lr; linearly ramped to max at last layer; set 1.0 for uniform LR")
+    p.add_argument("--lr_logit_factor",   type=float, default=10.0,
+                   help="LR multiplier for log_T_logit relative to lr_t; set 1.0 for uniform LR")
+    p.add_argument("--weight_decay_t",    type=float, default=WEIGHT_DECAY_T,
+                   help="Weight decay for per-layer log_T parameters (0 = off); log_T_logit is never decayed")
     p.add_argument("--init_log_s",          type=float, default=INIT_LOG_S)
+    p.add_argument("--fixed_log_s",         type=float, default=0.0,
+                   help="Fixed (non-learned) global log_s for per_layer_logit variant")
+    p.add_argument("--load_calib_params",   type=str,   default=None,
+                   help="Path to a calib_params_*.pt checkpoint; loaded into the model before any training")
+    p.add_argument("--init_log_T",          type=float, default=None,
+                   help="Scalar initialiser broadcast to all log_T_list[i] (applied after --load_calib_params)")
+    p.add_argument("--init_log_T_logit",    type=float, default=None,
+                   help="Scalar initialiser for log_T_logit (applied after --load_calib_params)")
+    p.add_argument("--freeze_log_T",        action="store_true", default=False,
+                   help="Freeze all log_T_list params (requires_grad=False); only log_T_logit is trained")
+    p.add_argument("--suffix",              type=str,   default="",
+                   help="Optional suffix appended to the output JSON base tag")
+    p.add_argument("--results_dir",         type=str,   default=None,
+                   help="If set, also writes results/{task}/{seed_label}/{swiglu}_{rms}[_{suffix}].json")
+    p.add_argument("--merge_results_into", type=str,   default=None,
+                   help="Filename inside results/{task}/{seed_label}/ to merge calibrated results into "
+                        "(e.g. exact_mvp.json); adds 'val_calibrated'/'test_calibrated' keys in place of a new file")
+    p.add_argument("--val_calib_key",      type=str,   default="val_calibrated",
+                   help="Key written under --merge_results_into for the val split")
+    p.add_argument("--test_calib_key",     type=str,   default="test_calibrated",
+                   help="Key written under --merge_results_into for the test split")
     p.add_argument("--finetune_s",          action="store_true", default=FINETUNE_S)
     p.add_argument("--lr_s_finetune",       type=float, default=LR_S_FINETUNE)
     p.add_argument("--n_mc_calib",          type=int,   default=N_MC_CALIB)
     p.add_argument("--n_mc_eval",           type=int,   default=N_MC_EVAL)
+    p.add_argument("--eval_on_test",        action="store_true", default=False,
+                   help="Also evaluate on the test split after calibration")
     args = p.parse_args()
 
     peft_method = "lora_lmhead" if args.lm_head else "lora"
@@ -209,6 +261,59 @@ def kfac_diagonal_variance(posterior_precision) -> list[torch.Tensor]:
         else:
             raise ValueError(f"Unexpected Kronecker factors: {len(ls)}")
     return variances
+
+
+def extract_kron_lora_factors(
+    H_dict: dict,
+    trainable_params: list,
+    device,
+    max_full_dim: int = 64,
+) -> dict:
+    """Extract small full-matrix Kronecker factor inverses for improved LoRA VP.
+
+    Must be called AFTER extract_param_variances (which sets H.deltas).
+
+    For each 2-factor KFAC layer returns a dict:
+      G_inv      — full [n1, n1] output-factor inverse   (None if n1 > max_full_dim)
+      G_inv_diag — [n1] diagonal of output-factor inverse
+      A_inv      — full [n2, n2] input-factor inverse    (None if n2 > max_full_dim)
+      A_inv_diag — [n2] diagonal of input-factor inverse
+
+    For LoRA weights (r=8, d_in=4096):
+      lora_A [r, d_in]:  G_inv is [r, r] (small ✓), A_inv is [d_in, d_in] (skipped)
+      lora_B [d_out, r]: G_inv is [d_out, d_out] (skipped), A_inv is [r, r] (small ✓)
+    """
+    H = H_dict["H"]
+    if isinstance(H, torch.Tensor):
+        return {}
+
+    result = {}
+    for (name, _), Qs, ls, delta in zip(
+        trainable_params, H.eigenvectors, H.eigenvalues, H.deltas
+    ):
+        if len(ls) != 2:
+            result[name] = None
+            continue
+
+        n1, n2 = len(ls[0]), len(ls[1])
+
+        def _diag_inv(which):
+            Q, l = Qs[which], ls[which]
+            return ((Q ** 2) @ (1.0 / (l + delta))).to(device).float()
+
+        def _full_inv(which):
+            Q, l = Qs[which], ls[which]
+            inv_l = (1.0 / (l + delta)).to(Q.dtype)
+            return ((Q * inv_l.unsqueeze(0)) @ Q.T).to(device).float()
+
+        result[name] = {
+            "G_inv":      _full_inv(0) if n1 <= max_full_dim else None,
+            "G_inv_diag": _diag_inv(0),
+            "A_inv":      _full_inv(1) if n2 <= max_full_dim else None,
+            "A_inv_diag": _diag_inv(1),
+        }
+
+    return result
 
 
 def extract_param_variances(
@@ -329,7 +434,7 @@ def _gelu_moments_k3(m: torch.Tensor, v: torch.Tensor):
     """(E[GELU(y)], Var[GELU(y)]) for y ~ N(m, v) via Hermite order-3 expansion."""
     zeta  = torch.rsqrt(1.0 + v)
     m_out = m * torch.special.ndtr(m * zeta) + v * zeta * _npdf(m * zeta)
-    sigma = v.sqrt()
+    sigma = (v + 1e-6).sqrt()
     gamma = (m * zeta).clamp(-20.0, 20.0)
     alpha = sigma * zeta
     phig  = _npdf(gamma)
@@ -371,7 +476,7 @@ def _vp_swiglu_exact(gate: ParamPair, up: ParamPair, cov_gu: torch.Tensor) -> Pa
               + silu_v * up.mean**2
               + silu_m**2 * up.var
               + 2.0 * df * cov_gu * silu_m * up.mean)
-    return ParamPair(mean, var)
+    return ParamPair(mean, var.clamp(min=0))
 
 
 # ---------------------------------------------------------------------------
@@ -379,12 +484,15 @@ def _vp_swiglu_exact(gate: ParamPair, up: ParamPair, cov_gu: torch.Tensor) -> Pa
 # ---------------------------------------------------------------------------
 
 class VPLlamaAttention(nn.Module):
-    """VP through LlamaAttention — VALUE_ONLY strategy.
+    """VP through LlamaAttention.
 
-    Q and K are computed from their MAP means (attention pattern deterministic).
-    V uncertainty from the v_proj LoRA posterior propagates through the
-    deterministic attention weights:  Var[out]_t = attn_w_t² ⊗ V_var_t.
-    Q variance is computed by q_mvp but discarded.
+    attn_var_mode controls Q-side uncertainty:
+    - "value_only": Q/K pattern deterministic; only V uncertainty propagates via
+                    Var[out]_t = attn_w_t² ⊗ v_var_t.
+    - "full": Q uncertainty propagates via delta-method linearisation through softmax.
+              score_var[i,j] = scaling² * q_var[i] · k[j]²  (RoPE ~ variance-preserving)
+              Var[p_i] = p_i² * [score_var_i*(1-2*p_i) + Σ_j p_j²*score_var_j]
+              out_var  += attn_var @ v_mean²  (additive to V-path term)
     """
 
     def __init__(
@@ -396,22 +504,21 @@ class VPLlamaAttention(nn.Module):
         n_heads: int,
         head_dim: int,
         scaling: float,
+        attn_var_mode: str = "value_only",
     ):
         super().__init__()
         self.register_buffer("k_weight", k_weight)
         self.register_buffer("o_weight", o_weight)
-        # Store Q LoRA buffers for two-step computation matching PEFT:
+        # q_mvp kept as submodule; mean computed two-step in forward to match PEFT:
         #   q = W_base @ x + scaling * B @ (A @ x)
         # Precomputing W_q_eff = W_base + s*B@A in bfloat16 accumulates ~O(24) error
         # (7 mantissa bits × r=8 outer-product terms over hidden_dim=4096).
-        self.register_buffer("q_base_weight",  q_mvp.base_weight)
-        self.register_buffer("q_lora_A_mean",  q_mvp.lora_A_mean)
-        self.register_buffer("q_lora_B_mean",  q_mvp.lora_B_mean)
-        self.q_lora_scaling = q_mvp.scaling
-        self.v_mvp  = v_mvp
+        self.q_mvp = q_mvp
+        self.v_mvp = v_mvp
         self.n_heads = n_heads
         self.head_dim = head_dim
         self.scaling  = scaling
+        self.attn_var_mode = attn_var_mode
 
     def forward(self, x: ParamPair, attn_mask, position_embeddings, var_scale=1.0) -> ParamPair:
         B, S, H = x.mean.shape
@@ -420,11 +527,12 @@ class VPLlamaAttention(nn.Module):
         with torch.no_grad():
             # Q and K don't depend on var_scale — compute under no_grad to save memory
             # Two-step Q matching PEFT: W_base @ x + scaling * B @ (A @ x)
-            q = (F.linear(x.mean, self.q_base_weight)
-                 + self.q_lora_scaling * F.linear(F.linear(x.mean, self.q_lora_A_mean), self.q_lora_B_mean)
+            q = (F.linear(x.mean, self.q_mvp.base_weight)
+                 + self.q_mvp.scaling * F.linear(F.linear(x.mean, self.q_mvp.lora_A_mean), self.q_mvp.lora_B_mean)
                  ).view(B, S, self.n_heads, self.head_dim).transpose(1, 2)
             k = F.linear(x.mean, self.k_weight).view(B, S, self.n_heads, self.head_dim).transpose(1, 2)
             q, k = apply_rotary_pos_emb(q, k, cos, sin)
+            k_sq = k ** 2
             scores = torch.matmul(q, k.transpose(-2, -1)) * self.scaling
             if attn_mask is not None:
                 scores = scores + attn_mask
@@ -436,8 +544,25 @@ class VPLlamaAttention(nn.Module):
         v_mean = v_pair.mean.view(B, S, self.n_heads, self.head_dim).transpose(1, 2)
         v_var  = v_pair.var.view(B, S, self.n_heads, self.head_dim).transpose(1, 2)
 
+        out_var = torch.matmul(attn_w ** 2, v_var)  # V-path variance [B, n, S, d]
+
+        if self.attn_var_mode == "full":
+            # Q variance (gradient flows through var_scale via q_mvp)
+            q_var = self.q_mvp(x, var_scale=var_scale).var.view(B, S, self.n_heads, self.head_dim).transpose(1, 2)
+            # score_var[i,j] = scaling² * Σ_d q_var[i,d] * k[j,d]²
+            # RoPE is an orthogonal transform; for symmetric LoRA posteriors it is
+            # approximately variance-preserving on the diagonal, so we use pre-RoPE q_var.
+            score_var = self.scaling ** 2 * torch.matmul(q_var, k_sq.transpose(-2, -1))
+            # Delta method: linearise softmax Jacobian J_ij = p_i(δ_ij - p_j)
+            # Var[p_i] = p_i² * [score_var_i*(1 - 2*p_i) + Σ_j p_j²*score_var_j]
+            p = attn_w
+            S_w = (p ** 2 * score_var).sum(-1, keepdim=True)  # [B, n, S_q, 1]
+            attn_var = (p ** 2 * (score_var * (1 - 2 * p) + S_w)).clamp(min=0)
+            # Attention-weight uncertainty contributes Var[Σ_s p_s*v_s] ≈ Σ_s attn_var_s * v_mean_s²
+            out_var = out_var + torch.matmul(attn_var, v_mean ** 2)
+
         out_mean = torch.matmul(attn_w, v_mean).transpose(1, 2).reshape(B, S, H)
-        out_var  = torch.matmul(attn_w ** 2, v_var).transpose(1, 2).reshape(B, S, H)
+        out_var  = out_var.transpose(1, 2).reshape(B, S, H)
         return vp_linear(ParamPair(out_mean, out_var), self.o_weight)
 
 
@@ -545,15 +670,18 @@ class VPBackbone(nn.Module):
 
         x = ParamPair(inputs_embeds, torch.zeros_like(inputs_embeds))
 
+        _vs_per_layer = (isinstance(var_scale, torch.Tensor) and var_scale.numel() > 1)
+
         for i, vp_layer in enumerate(self.vp_layers):
+            vs_i = var_scale[i] if _vs_per_layer else var_scale
             # Attention sub-block
             if USE_GRAD_CHECKPOINT:
                 m, v = grad_checkpoint(
                     _vp_attn_fwd, vp_layer, causal_mask, cos, sin,
-                    x.mean, x.var, var_scale, use_reentrant=False,
+                    x.mean, x.var, vs_i, use_reentrant=False,
                 )
             else:
-                out = vp_layer.forward_attn_residual(x, causal_mask, (cos, sin), var_scale)
+                out = vp_layer.forward_attn_residual(x, causal_mask, (cos, sin), vs_i)
                 m, v = out.mean, out.var
             t_a = T_attn[i] if T_attn is not None else 1.0
             x = ParamPair(m, v * t_a)
@@ -576,11 +704,16 @@ def _get_weight_f32(module) -> torch.Tensor:
 
 def build_vp_backbone(backbone, param_variances: dict,
                       rms_norm_method: str = "mvp",
-                      swiglu_method: str = "exact") -> VPBackbone:
+                      swiglu_method: str = "exact",
+                      attn_var_mode: str = "value_only",
+                      kron_factors: dict | None = None) -> VPBackbone:
     """Construct VPBackbone from LlamaModel + KFAC per-element variances.
 
     Layers whose LoRA variances are absent in param_variances get zero-variance
     buffers (reduces to MAP for that projection).
+
+    If kron_factors is provided (output of extract_kron_lora_factors), each
+    LoRALinearMVP uses the improved Kronecker VP instead of the diagonal approx.
     """
     rms_norm_fn = vp_rms_norm_mvp if rms_norm_method == "mvp" else vp_rms_norm_streamlined
     cfg      = backbone.config
@@ -594,17 +727,34 @@ def build_vp_backbone(backbone, param_variances: dict,
                 return var.float().clamp(min=0)
         return None
 
+    def find_kron(pattern: str) -> dict | None:
+        if kron_factors is None:
+            return None
+        for name, kf in kron_factors.items():
+            if pattern in name and kf is not None:
+                return kf
+        return None
+
     def make_mvp(lora_layer, layer_idx, proj_name):
         pfx   = f"layers.{layer_idx}.self_attn.{proj_name}"
         A_mean = lora_layer.lora_A["default"].weight.float().detach()
         B_mean = lora_layer.lora_B["default"].weight.float().detach()
         _av = find_var(f"{pfx}.lora_A"); A_var = _av if _av is not None else torch.zeros(A_mean.shape, dtype=torch.float32, device=A_mean.device)
         _bv = find_var(f"{pfx}.lora_B"); B_var = _bv if _bv is not None else torch.zeros(B_mean.shape, dtype=torch.float32, device=B_mean.device)
+
+        kf_A = find_kron(f"{pfx}.lora_A")
+        kf_B = find_kron(f"{pfx}.lora_B")
+
         return LoRALinearMVP(
             base_weight=_get_weight_f32(lora_layer.base_layer),
             lora_A_mean=A_mean, lora_B_mean=B_mean,
             lora_A_var=A_var,   lora_B_var=B_var,
             scaling=lora_layer.scaling["default"],
+            # Kron factors: G_inv [r,r] for A output side, A_inv [r,r] for B input side
+            G_A_inv          = kf_A["G_inv"]      if kf_A else None,
+            lora_A_A_inv_diag= kf_A["A_inv_diag"] if kf_A else None,
+            lora_B_G_inv_diag= kf_B["G_inv_diag"] if kf_B else None,
+            A_B_inv          = kf_B["A_inv"]      if kf_B else None,
         )
 
     vp_decoder_layers = []
@@ -615,6 +765,7 @@ def build_vp_backbone(backbone, param_variances: dict,
             q_mvp=make_mvp(layer.self_attn.q_proj, i, "q_proj"),
             v_mvp=make_mvp(layer.self_attn.v_proj, i, "v_proj"),
             n_heads=n_heads, head_dim=head_dim, scaling=scaling,
+            attn_var_mode=attn_var_mode,
         )
         vp_mlp = VPLlamaMLP(
             gate_weight=_get_weight_f32(layer.mlp.gate_proj),
@@ -679,6 +830,34 @@ class VPCalibLogSOnly(nn.Module):
 
     @property
     def n_calib_params(self): return 1
+
+
+class VPCalibLogSPerBlock(nn.Module):
+    """Phase-1 variant: per-layer LoRA posterior scale (one log_s per transformer block).
+    Learnable: log_s_list[N] — ParameterList so each layer can have its own Adam state / LR.
+    """
+
+    def __init__(self, vp_backbone: VPBackbone, vp_head: VPLMHead):
+        super().__init__()
+        self.vp_backbone  = vp_backbone
+        self.vp_head      = vp_head
+        N = len(vp_backbone.vp_layers)
+        self.log_s_list = nn.ParameterList([nn.Parameter(torch.zeros(1)) for _ in range(N)])
+
+    @property
+    def log_s(self) -> torch.Tensor:
+        return torch.cat([p for p in self.log_s_list])  # [N]
+
+    def forward(self, input_ids, attention_mask) -> ParamPair:
+        vs = self.log_s.exp()  # [N]
+        hidden = self.vp_backbone(input_ids, attention_mask, var_scale=vs,
+                                   T_attn=None, T_mlp=None)
+        h = ParamPair(hidden.mean[:, -1, :], hidden.var[:, -1, :])
+        return self.vp_head(h, var_scale=vs.mean())
+
+    @property
+    def n_calib_params(self):
+        return sum(p.numel() for p in self.parameters() if p.requires_grad)
 
 
 class VPCalibGlobal(nn.Module):
@@ -760,31 +939,122 @@ class VPCalibPerSubBlock(nn.Module):
 
 
 class VPCalibPerSubBlockLogit(nn.Module):
-    """Per-sub-block temperatures + a final scale on the logit-level variance.
-    Learnable: log_s (1) + log_T[N, 2] (2N) + log_T_logit (1).
+    """Phase-2: shared attn/MLP temperatures + logit-level scale.
+
+    Shared temperatures (not per-layer) distinguish the attn and MLP
+    approximation error structure without per-layer proliferation.
+
+    Learnable in phase-2: log_T_attn (1), log_T_mlp (1), log_T_logit (1).
+    log_s frozen from phase-1 (scalar or [N] tensor).
+    Total active params: 3.
     """
 
     def __init__(self, vp_backbone: VPBackbone, vp_head: VPLMHead):
         super().__init__()
-        self.vp_backbone  = vp_backbone
-        self.vp_head      = vp_head
-        N = len(vp_backbone.vp_layers)
+        self.vp_backbone = vp_backbone
+        self.vp_head     = vp_head
         self.log_s       = nn.Parameter(torch.zeros(1))
-        self.log_T       = nn.Parameter(torch.zeros(N, 2))
+        self.log_T_attn  = nn.Parameter(torch.zeros(1))
+        self.log_T_mlp   = nn.Parameter(torch.zeros(1))
         self.log_T_logit = nn.Parameter(torch.zeros(1))
 
     def forward(self, input_ids, attention_mask) -> ParamPair:
         vs = self.log_s.exp()
-        T  = self.log_T.exp()
+        N  = len(self.vp_backbone.vp_layers)
+        T_attn = self.log_T_attn.exp().expand(N)
+        T_mlp  = self.log_T_mlp.exp().expand(N)
         hidden = self.vp_backbone(input_ids, attention_mask, var_scale=vs,
-                                   T_attn=T[:, 0], T_mlp=T[:, 1])
+                                   T_attn=T_attn, T_mlp=T_mlp)
         h = ParamPair(hidden.mean[:, -1, :], hidden.var[:, -1, :])
-        logits = self.vp_head(h, var_scale=vs)
-        # Final logit-level variance scale
+        vs_head = vs.mean() if vs.numel() > 1 else vs
+        logits = self.vp_head(h, var_scale=vs_head)
         return ParamPair(logits.mean, logits.var * self.log_T_logit.exp())
 
     @property
-    def n_calib_params(self): return 2 + 2 * len(self.vp_backbone.vp_layers)
+    def n_calib_params(self):
+        return sum(p.numel() for p in self.parameters() if p.requires_grad)
+
+
+class VPCalibPerLayerLogit(nn.Module):
+    """Per-block T[N] + logit scale. log_s fixed (not learned).
+
+    One temperature per transformer block applied after the full layer output
+    (MLP residual). ParameterList gives each block its own Adam state so the
+    linear LR ramp works correctly — later blocks (which empirically need higher
+    T) get a proportionally larger LR.
+
+    log_s is a fixed buffer (exp(FIXED_LOG_S) ≈ 0.018); no phase-1 needed.
+    Learnable: log_T_list[N] + log_T_logit  (N+1 params total).
+    """
+
+    def __init__(self, vp_backbone: VPBackbone, vp_head: VPLMHead,
+                 fixed_log_s: float = FIXED_LOG_S):
+        super().__init__()
+        self.vp_backbone = vp_backbone
+        self.vp_head     = vp_head
+        N = len(vp_backbone.vp_layers)
+        self.register_buffer("log_s", torch.tensor(fixed_log_s))
+        self.log_T_list  = nn.ParameterList([nn.Parameter(torch.zeros(1)) for _ in range(N)])
+        self.log_T_logit = nn.Parameter(torch.zeros(1))
+
+    @property
+    def log_T(self) -> torch.Tensor:
+        return torch.cat([p for p in self.log_T_list])  # [N]
+
+    def forward(self, input_ids, attention_mask) -> ParamPair:
+        vs = self.log_s.exp()   # fixed scalar
+        T  = self.log_T.exp()   # [N]
+        hidden = self.vp_backbone(input_ids, attention_mask, var_scale=vs,
+                                   T_attn=None, T_mlp=T)
+        h = ParamPair(hidden.mean[:, -1, :], hidden.var[:, -1, :])
+        logits = self.vp_head(h, var_scale=vs)
+        return ParamPair(logits.mean, logits.var * self.log_T_logit.exp())
+
+    @property
+    def n_calib_params(self):
+        return sum(p.numel() for p in self.parameters() if p.requires_grad)
+
+
+class VPCalibPerBlockST(nn.Module):
+    """Single-phase: per-block LoRA posterior scale + per-block activation temperature + logit scale.
+
+    Both log_s and log_T have one parameter per transformer block, jointly calibrated
+    in a single phase.  ParameterLists give each block its own Adam state so the
+    linear LR ramp works correctly — later blocks get proportionally larger LRs.
+
+    log_s initialized to FIXED_LOG_S; log_T and log_T_logit initialized to 0.
+    Learnable: log_s_list[N] + log_T_list[N] + log_T_logit  (2N+1 params total).
+    """
+
+    def __init__(self, vp_backbone: VPBackbone, vp_head: VPLMHead):
+        super().__init__()
+        self.vp_backbone = vp_backbone
+        self.vp_head     = vp_head
+        N = len(vp_backbone.vp_layers)
+        self.log_s_list  = nn.ParameterList([nn.Parameter(torch.zeros(1)) for _ in range(N)])
+        self.log_T_list  = nn.ParameterList([nn.Parameter(torch.zeros(1)) for _ in range(N)])
+        self.log_T_logit = nn.Parameter(torch.zeros(1))
+
+    @property
+    def log_s(self) -> torch.Tensor:
+        return torch.cat([p for p in self.log_s_list])  # [N]
+
+    @property
+    def log_T(self) -> torch.Tensor:
+        return torch.cat([p for p in self.log_T_list])  # [N]
+
+    def forward(self, input_ids, attention_mask) -> ParamPair:
+        vs = self.log_s.exp()   # [N]
+        T  = self.log_T.exp()   # [N]
+        hidden = self.vp_backbone(input_ids, attention_mask, var_scale=vs,
+                                   T_attn=None, T_mlp=T)
+        h = ParamPair(hidden.mean[:, -1, :], hidden.var[:, -1, :])
+        logits = self.vp_head(h, var_scale=vs.mean())
+        return ParamPair(logits.mean, logits.var * self.log_T_logit.exp())
+
+    @property
+    def n_calib_params(self):
+        return sum(p.numel() for p in self.parameters() if p.requires_grad)
 
 
 # ---------------------------------------------------------------------------
@@ -839,6 +1109,8 @@ def run_variant(
     variant_name: str,
     accelerator,
     lr_s: float | None = None,
+    n_epochs: int | None = None,
+    test_loader=None,
 ) -> dict:
     """Calibrate one variant and return its results.
 
@@ -847,32 +1119,82 @@ def run_variant(
     log_s_only, main sets lr_s=args.lr_s_finetune when FINETUNE_S=True, or
     freezes log_s (requires_grad=False) and passes lr_s=None when False.
     """
-    accelerator.print(f"\n--- Variant: {variant_name} ({model.n_calib_params} params) ---")
+    n_epochs = n_epochs if n_epochs is not None else args.n_epochs
+    accelerator.print(f"\n--- Variant: {variant_name} ({model.n_calib_params} params, {n_epochs} epochs) ---")
 
-    if variant_name == "log_s_only":
-        model.log_s.data.fill_(-5.0)
-        accelerator.print(f"  initialising log_s = -5.0")
+    if variant_name in ("log_s_only", "log_s_per_block", "per_block_st"):
+        if hasattr(model, "log_s_list"):
+            for p in model.log_s_list:
+                p.data.fill_(-4.0)
+        else:
+            model.log_s.data.fill_(-4.0)
+        accelerator.print(f"  initialising log_s = -4.0 (shape={list(model.log_s.shape)})")
 
     lr_s = lr_s if lr_s is not None else args.lr
 
-    # Build param groups; skip log_s entirely if frozen (requires_grad=False).
-    log_s_params = [p for n, p in model.named_parameters() if n == "log_s" and p.requires_grad]
-    log_t_params = [p for n, p in model.named_parameters() if n != "log_s" and p.requires_grad]
+    if getattr(args, "freeze_log_T", False) and hasattr(model, "log_T_list"):
+        for p in model.log_T_list:
+            p.requires_grad_(False)
+        accelerator.print("  freeze_log_T: log_T_list frozen at 0.0; only log_T_logit trained")
+
+    # Build param groups with linearly-increasing LR across layers.
+    # Layer 0 gets lr * lr_min_factor; last layer gets lr (max).
+    def _layer_lr(max_lr: float, layer_idx: int, n_layers: int) -> float:
+        if n_layers <= 1:
+            return max_lr
+        t = layer_idx / (n_layers - 1)
+        return max_lr * (args.lr_min_factor + (1.0 - args.lr_min_factor) * t)
+
     param_groups = []
-    if log_s_params:
-        param_groups.append({"params": log_s_params, "lr": lr_s})
-    param_groups.append({"params": log_t_params, "lr": args.lr})
-    optimizer = torch.optim.Adam(param_groups)
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, mode="min", factor=0.5, patience=4,
-        min_lr=min(lr_s, args.lr) * 1e-2,
+
+    # log_s: either a single Parameter or a ParameterList (per-block)
+    if hasattr(model, "log_s_list"):
+        N = len(model.log_s_list)
+        for i, p in enumerate(model.log_s_list):
+            if p.requires_grad:
+                param_groups.append({"params": [p], "lr": _layer_lr(lr_s, i, N)})
+    elif hasattr(model, "log_s") and isinstance(model.log_s, nn.Parameter) and model.log_s.requires_grad:
+        param_groups.append({"params": [model.log_s], "lr": lr_s})
+
+    # log_T_list: ParameterList, one per block — linear LR ramp
+    if hasattr(model, "log_T_list"):
+        N = len(model.log_T_list)
+        for i, p in enumerate(model.log_T_list):
+            if p.requires_grad:
+                param_groups.append({"params": [p], "lr": _layer_lr(args.lr_t, i, N)})
+
+    # log_T_attn / log_T_mlp: shared scalars (simplified variant)
+    for attr in ("log_T_attn", "log_T_mlp"):
+        p = getattr(model, attr, None)
+        if isinstance(p, nn.Parameter) and p.requires_grad:
+            param_groups.append({"params": [p], "lr": args.lr_t})
+
+    # log_T: single Parameter (older per-layer / per-sub-block variants)
+    if hasattr(model, "log_T") and isinstance(model.log_T, nn.Parameter) and model.log_T.requires_grad:
+        param_groups.append({"params": [model.log_T], "lr": args.lr_t})
+
+    # log_T_logit: final scale
+    if hasattr(model, "log_T_logit") and model.log_T_logit.requires_grad:
+        param_groups.append({"params": [model.log_T_logit], "lr": args.lr_t * args.lr_logit_factor})
+    optimizer = torch.optim.AdamW(param_groups, weight_decay=args.weight_decay_t)
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+        optimizer, T_max=n_epochs, eta_min=0.0,
     )
+
+    if n_epochs > 0:
+        model.eval()
+        with torch.no_grad():
+            _init_nll_sum, _init_nll_steps = 0.0, 0
+            for batch in calib_loader:
+                _init_nll_sum   += nll_batch(model, batch, device, args.n_mc_calib).item()
+                _init_nll_steps += 1
+        accelerator.print(f"  init NLL (before training) = {_init_nll_sum / _init_nll_steps:.4f}")
 
     model.train()
     best_state, best_nll = None, float("inf")
     t_start = time.perf_counter()
 
-    for epoch in range(args.n_epochs):
+    for epoch in range(n_epochs):
         optimizer.zero_grad()
         epoch_loss_sum, epoch_steps = 0.0, 0
 
@@ -896,55 +1218,83 @@ def run_variant(
                 for p in all_params:
                     if p.grad is not None:
                         p.grad.nan_to_num_(nan=0.0, posinf=0.0, neginf=0.0)
-                torch.nn.utils.clip_grad_norm_(all_params, max_norm=10.0)
-                # Extra value clipping for calibration parameters (leaf tensors only)
-                _calib_params = [model.log_s]
-                if hasattr(model, "log_T"):
-                    _calib_params.append(model.log_T)
-                if hasattr(model, "log_T_logit"):
-                    _calib_params.append(model.log_T_logit)
-                for p in _calib_params:
-                    if p.grad is not None:
-                        p.grad.clamp_(-10.0, 10.0)
                 optimizer.step()
                 optimizer.zero_grad()
 
             if (batch_idx + 1) % 10 == 0 or last_batch:
-                _s_now = model.log_s.item()
-                _t_now = (f"{model.log_T.mean().item():.4f}"
-                          if hasattr(model, "log_T") and model.log_T.numel() > 0 else "N/A")
+                _ls    = model.log_s.detach()
+                _s_str = (f"{_ls.mean().item():.4f}(mean)" if _ls.numel() > 1
+                          else f"{_ls.item():.4f}")
                 accelerator.print(
                     f"    batch {batch_idx+1:4d}/{n_batches}  "
                     f"nll(last 10)={log_window_sum / log_window_steps:.4f}  "
-                    f"log_s={_s_now:.4f}  mean(log_T)={_t_now}"
+                    f"log_s={_s_str}"
                 )
+                if hasattr(model, "log_T_list"):
+                    _lt = model.log_T.detach()
+                    accelerator.print(
+                        f"      log_T mean={_lt.mean():.4f}  min={_lt.min():.4f}  max={_lt.max():.4f}"
+                    )
+                elif hasattr(model, "log_T_attn"):
+                    accelerator.print(
+                        f"      log_T_attn={model.log_T_attn.item():.4f}  "
+                        f"log_T_mlp={model.log_T_mlp.item():.4f}"
+                    )
+                elif hasattr(model, "log_T") and model.log_T.numel() > 0:
+                    _lt = model.log_T.detach().reshape(-1, 2)
+                    accelerator.print(
+                        f"      log_T mean=[{_lt[:,0].mean():.3f}, {_lt[:,1].mean():.3f}] (attn, mlp)"
+                    )
+                if hasattr(model, "log_T_logit"):
+                    accelerator.print(
+                        f"      log_T_logit={model.log_T_logit.item():.4f}"
+                    )
                 log_window_sum, log_window_steps = 0.0, 0
 
         epoch_nll = epoch_loss_sum / epoch_steps
-        scheduler.step(epoch_nll)
+        scheduler.step()
         if epoch_nll < best_nll:
             best_nll   = epoch_nll
-            best_state = {k: v.detach().clone() for k, v in model.state_dict().items()
-                          if k in {n for n, _ in model.named_parameters()}}
+            best_state = {n: p.detach().cpu().clone()
+                          for n, p in model.named_parameters() if p.requires_grad}
 
         elapsed  = time.perf_counter() - t_start
         secs_per_epoch = elapsed / (epoch + 1)
-        eta      = secs_per_epoch * (args.n_epochs - epoch - 1)
+        eta      = secs_per_epoch * (n_epochs - epoch - 1)
 
         def _fmt(secs):
             m, s = divmod(int(secs), 60)
             return f"{m}m{s:02d}s"
 
-        s_val  = model.log_s.item()
-        t_val  = (f"{model.log_T.mean().item():.4f}"
-                  if hasattr(model, "log_T") and model.log_T.numel() > 0 else "N/A")
-        lr_val = optimizer.param_groups[0]["lr"]
+        _ls_now = model.log_s.detach()
+        s_val   = (_ls_now.mean().item() if _ls_now.numel() > 1 else _ls_now.item())
+        lr_s_val = optimizer.param_groups[0]["lr"]
+        lr_t_val = optimizer.param_groups[-1]["lr"]  # last group = last layer / log_T_logit (max LR)
         accelerator.print(
-            f"  epoch {epoch+1:3d}/{args.n_epochs}  "
+            f"  epoch {epoch+1:3d}/{n_epochs}  "
             f"nll={epoch_nll:.4f}  log_s={s_val:.4f}  "
-            f"mean(log_T)={t_val}  lr={lr_val:.2e}  "
-            f"elapsed={_fmt(elapsed)}  eta={_fmt(eta)}"
+            f"lr_s={lr_s_val:.2e}  lr_t_max={lr_t_val:.2e}  elapsed={_fmt(elapsed)}  eta={_fmt(eta)}"
         )
+        if hasattr(model, "log_T_list"):
+            _lt = model.log_T.detach()
+            accelerator.print(
+                f"  log_T mean={_lt.mean():.4f}  min={_lt.min():.4f}  max={_lt.max():.4f}"
+            )
+            accelerator.print(
+                "  log_T=[" + ", ".join(f"{v:.3f}" for v in _lt.tolist()) + "]"
+            )
+        elif hasattr(model, "log_T_attn"):
+            accelerator.print(
+                f"  log_T_attn={model.log_T_attn.item():.4f}  "
+                f"log_T_mlp={model.log_T_mlp.item():.4f}"
+            )
+        elif hasattr(model, "log_T") and model.log_T.numel() > 0:
+            _lt = model.log_T.detach().reshape(-1, 2)
+            accelerator.print(
+                f"  log_T mean=[{_lt[:,0].mean():.4f}, {_lt[:,1].mean():.4f}] (attn, mlp)"
+            )
+        if hasattr(model, "log_T_logit"):
+            accelerator.print(f"  log_T_logit={model.log_T_logit.item():.4f}")
 
     # Restore best checkpoint
     if best_state:
@@ -954,27 +1304,60 @@ def run_variant(
     accelerator.print(f"  Best calib NLL: {best_nll:.4f}")
 
     model.eval()
-    val_metrics, val_probs, val_labels = evaluate_vp(model, val_loader, device, args.n_mc_eval)
     eval_metrics, eval_probs, eval_labels = evaluate_vp(model, eval_loader, device, args.n_mc_eval)
     eval_metrics.update(compute_all_metrics(eval_probs, eval_labels))
-
-    accelerator.print(f"  Val:  {val_metrics}")
     accelerator.print(f"  Eval: {eval_metrics}")
 
+    test_metrics = None
+    if test_loader is not None:
+        test_metrics, test_probs, test_labels = evaluate_vp(model, test_loader, device, args.n_mc_eval)
+        test_metrics.update(compute_all_metrics(test_probs, test_labels))
+        accelerator.print(f"  Test: {test_metrics}")
+
     # Collect learnable scalars for logging
-    scalars = {"log_s": model.log_s.item(), "s": model.log_s.exp().item()}
-    if hasattr(model, "log_T"):
-        scalars["log_T"]      = model.log_T.tolist()
+    # model.log_s may be a property (ParameterList case) — always materialise it
+    _log_s_final = model.log_s.detach().cpu() if not isinstance(model.log_s, nn.Parameter) \
+                   else model.log_s.detach().cpu()
+    if _log_s_final.numel() > 1:
+        scalars = {"log_s": _log_s_final,           # [N] tensor — kept as tensor for phase-2 transfer
+                   "log_s_list": _log_s_final.tolist(),  # JSON-serializable copy
+                   "log_s_mean": _log_s_final.mean().item(),
+                   "s_mean": _log_s_final.exp().mean().item()}
+    else:
+        scalars = {"log_s": _log_s_final.item(), "s": _log_s_final.exp().item()}
+    if hasattr(model, "log_T_list"):
+        _lt = model.log_T.detach().cpu()
+        scalars["log_T"]      = _lt.tolist()
+        scalars["log_T_mean"] = _lt.mean().item()
+    elif hasattr(model, "log_T_attn"):
+        scalars["log_T_attn"] = model.log_T_attn.item()
+        scalars["log_T_mlp"]  = model.log_T_mlp.item()
+    elif hasattr(model, "log_T"):
+        scalars["log_T"]      = model.log_T.detach().cpu().tolist()
         scalars["log_T_mean"] = model.log_T.mean().item()
-        scalars["log_T_std"]  = model.log_T.std().item()
     if hasattr(model, "log_T_logit"):
         scalars["log_T_logit"] = model.log_T_logit.item()
+
+    # Save calibrated parameters as a .pt checkpoint for later reuse
+    calib_ckpt = {n: p.detach().cpu() for n, p in model.named_parameters()}
+    calib_ckpt_path = os.path.join(
+        args.laplace_output_dir, f"step_{args.load_step}",
+        f"calib_params_{variant_name}.pt"
+    )
+    os.makedirs(os.path.dirname(calib_ckpt_path), exist_ok=True)
+    torch.save(calib_ckpt, calib_ckpt_path)
+    accelerator.print(f"  Saved calibration params → {calib_ckpt_path}")
+
+    # Build JSON-safe copy of scalars (strip tensors)
+    scalars_json = {k: (v.tolist() if isinstance(v, torch.Tensor) else v)
+                    for k, v in scalars.items()}
 
     return {
         "variant":  variant_name,
         "scalars":  scalars,
-        "val":      val_metrics,
+        "scalars_json": scalars_json,
         "eval":     eval_metrics,
+        "test":     test_metrics,
         "best_calib_nll": best_nll,
     }
 
@@ -1113,6 +1496,12 @@ def main():
     eval_loader  = DataLoader(eval_dataset,  shuffle=False, collate_fn=data_collator,
                               batch_size=args.per_device_eval_batch_size)
 
+    test_loader = None
+    if args.eval_on_test and "test" in processed:
+        test_loader = DataLoader(processed["test"], shuffle=False, collate_fn=data_collator,
+                                 batch_size=args.per_device_eval_batch_size)
+        accelerator.print(f"  Test split loaded: {len(processed['test'])} examples")
+
     # ── model ────────────────────────────────────────────────────────────────
     checkpoint_dir = f"{args.output_dir}/step_{args.load_step}"
     peft_config    = PeftConfig.from_pretrained(checkpoint_dir)
@@ -1171,12 +1560,20 @@ def main():
     model = model.to(device=device, dtype=torch.float32)
     model.eval()
     model.gradient_checkpointing_disable()
-    calib_loader, val_loader, eval_loader = accelerator.prepare(calib_loader, val_loader, eval_loader)
+    loaders = [calib_loader, val_loader, eval_loader]
+    if test_loader is not None:
+        loaders.append(test_loader)
+    loaders = accelerator.prepare(*loaders)
+    calib_loader, val_loader, eval_loader = loaders[:3]
+    test_loader = loaders[3] if test_loader is not None else None
 
+    steps_per_epoch = math.ceil(len(calib_loader) / args.grad_accum)
     if args.total_steps is not None:
-        steps_per_epoch = math.ceil(len(calib_loader) / args.grad_accum)
-        args.n_epochs   = math.ceil(args.total_steps / steps_per_epoch)
+        args.n_epochs = math.ceil(args.total_steps / steps_per_epoch)
         accelerator.print(f"  total_steps={args.total_steps} → steps_per_epoch={steps_per_epoch} → n_epochs={args.n_epochs}")
+    if args.total_steps_s is not None:
+        args.n_epochs_s = math.ceil(args.total_steps_s / steps_per_epoch)
+        accelerator.print(f"  total_steps_s={args.total_steps_s} → steps_per_epoch={steps_per_epoch} → n_epochs_s={args.n_epochs_s}")
 
     custom_lm_head   = CustomLMHead_lora(original_lm_head).to(device)
     model.base_model.model.lm_head = custom_lm_head
@@ -1206,6 +1603,11 @@ def main():
     for name, var in param_variances.items():
         accelerator.print(f"  {name}: {var.shape}  mean={var.mean():.3e}")
 
+    # Kron factors for improved LoRA VP (KFAC only; None for diagonal Hessian)
+    kron_factors = extract_kron_lora_factors(H_dict, trainable_params, device)
+    if kron_factors:
+        accelerator.print(f"  Extracted Kronecker factors for {len(kron_factors)} parameters")
+
     lora_A_var = next(v for n, v in param_variances.items() if "lm_head.lora_A" in n)
     lora_B_var = next(v for n, v in param_variances.items() if "lm_head.lora_B" in n)
 
@@ -1225,71 +1627,53 @@ def main():
         for n, v in param_variances.items()
         if "lm_head" not in n
     )
-    run_global           = RUN_GLOBAL
-    run_per_layer        = RUN_PER_LAYER
-    run_per_sub_block    = RUN_PER_SUB_BLOCK
+    run_global              = RUN_GLOBAL
+    run_per_layer           = RUN_PER_LAYER
+    run_per_sub_block       = RUN_PER_SUB_BLOCK
     run_per_sub_block_logit = RUN_PER_SUB_BLOCK_LOGIT
-    if not has_backbone_var and any([run_global, run_per_layer, run_per_sub_block, run_per_sub_block_logit]):
+    run_per_layer_logit     = RUN_PER_LAYER_LOGIT
+    run_per_block_st        = RUN_PER_BLOCK_ST
+    if not has_backbone_var and any([run_global, run_per_layer, run_per_sub_block,
+                                     run_per_sub_block_logit, run_per_layer_logit,
+                                     run_per_block_st]):
         accelerator.print(
             "WARNING: backbone LoRA variances are all zero (laplace_sub=last_layer). "
             "Skipping backbone VP variants — rerun with laplace_sub=all for these."
         )
-        run_global = run_per_layer = run_per_sub_block = run_per_sub_block_logit = False
+        run_global = run_per_layer = run_per_sub_block = run_per_sub_block_logit = run_per_layer_logit = run_per_block_st = False
 
-    need_vp_backbone = any([RUN_LOG_S_ONLY, run_global, run_per_layer, run_per_sub_block, run_per_sub_block_logit])
+    need_vp_backbone = any([RUN_LOG_S_ONLY, RUN_LOG_S_PER_BLOCK, run_global, run_per_layer,
+                            run_per_sub_block, run_per_sub_block_logit, run_per_layer_logit,
+                            run_per_block_st])
     if need_vp_backbone:
-        accelerator.print(f"--- Building VPBackbone (rms_norm={args.rms_norm_method}, swiglu={args.swiglu_method}) ---")
+        accelerator.print(f"--- Building VPBackbone (rms_norm={args.rms_norm_method}, swiglu={args.swiglu_method}, attn={args.attn_var_mode}, kron={bool(kron_factors)}) ---")
         vp_backbone = build_vp_backbone(backbone, param_variances,
-                                        args.rms_norm_method, args.swiglu_method).to(device)
+                                        args.rms_norm_method, args.swiglu_method,
+                                        attn_var_mode=args.attn_var_mode,
+                                        kron_factors=kron_factors or None).to(device)
         vp_backbone.eval()
     else:
         vp_backbone = None
 
-    # ── init_log_s grid search ────────────────────────────────────────────────
-    # Sweep log_s over [-20, -19.5, ..., 0] (41 points) to find the best
-    # starting point for backbone calibration.  Currently hardcoded to -5.0;
-    # replace `_grid_init_log_s = -5.0` with `_grid_init_log_s = _best_gs`
-    # to enable automatic selection.
-    if need_vp_backbone:
-        accelerator.print(f"\n--- init_log_s grid search (41 points: -20.0 .. 0.0) ---")
-        _gs_model = VPCalibLogSOnly(vp_backbone, vp_head).to(device)
-        _gs_model.eval()
-        _log_s_grid = [round(-20.0 + i * 0.5, 1) for i in range(41)]
-        _best_gs, _best_gs_nll = -5.0, float("inf")
-        with torch.no_grad():
-            for _ls in _log_s_grid:
-                _gs_model.log_s.data.fill_(_ls)
-                _ps, _ls_list, _n = [], [], 0
-                for _b in val_loader:
-                    if _n >= 128:
-                        break
-                    _p = mc_probs(_gs_model(_b["input_ids"].to(device),
-                                            _b["attention_mask"].to(device)), 1)
-                    _ps.append(_p.cpu()); _ls_list.append(_b["labels"].cpu())
-                    _n += _p.shape[0]
-                _probs  = torch.cat(_ps)[:128]
-                _labs   = torch.cat(_ls_list)[:128]
-                _nll = -torch.log(_probs.gather(1, _labs.unsqueeze(1)).clamp(min=1e-12)).mean().item()
-                accelerator.print(f"  log_s={_ls:+5.1f} → val_nll={_nll:.4f}")
-                if _nll < _best_gs_nll:
-                    _best_gs_nll, _best_gs = _nll, _ls
-        del _gs_model
-        torch.cuda.empty_cache()
-        accelerator.print(f"  Grid best: log_s={_best_gs:.1f} (val_nll={_best_gs_nll:.4f})")
-        _grid_init_log_s = -5.0  # TODO: replace with _best_gs to enable auto-selection
-        accelerator.print(f"  Selected:  log_s={_grid_init_log_s:.1f} (hardcoded)")
-    else:
-        _grid_init_log_s = -5.0
+    # ── init_log_s: learned in phase-1 (log_s_only), then frozen in later phases ─
+    _init_log_s = args.init_log_s if args.init_log_s is not None else -4.0
+    # Will be updated to the phase-1 best value before any backbone variant runs.
+    _learned_log_s = _init_log_s
 
     # ── Run variants ──────────────────────────────────────────────────────────
     all_results = []
 
+    _phase1_names = {"log_s_only", "log_s_per_block"}
+
     variants = [
         (RUN_LOG_S_ONLY,          "log_s_only",           lambda: VPCalibLogSOnly(vp_backbone, vp_head)),
+        (RUN_LOG_S_PER_BLOCK,     "log_s_per_block",      lambda: VPCalibLogSPerBlock(vp_backbone, vp_head)),
         (run_global,              "global",               lambda: VPCalibGlobal(vp_backbone, vp_head)),
         (run_per_layer,           "per_layer",            lambda: VPCalibPerLayer(vp_backbone, vp_head)),
         (run_per_sub_block,       "per_sub_block",        lambda: VPCalibPerSubBlock(vp_backbone, vp_head)),
         (run_per_sub_block_logit, "per_sub_block_logit",  lambda: VPCalibPerSubBlockLogit(vp_backbone, vp_head)),
+        (run_per_layer_logit,     "per_layer_logit",      lambda: VPCalibPerLayerLogit(vp_backbone, vp_head, fixed_log_s=args.fixed_log_s)),
+        (run_per_block_st,        "per_block_st",         lambda: VPCalibPerBlockST(vp_backbone, vp_head)),
     ]
 
     for flag, name, make_model in variants:
@@ -1297,20 +1681,75 @@ def main():
             continue
         if name == "log_s_only" and args.init_log_s is not None:
             accelerator.print(f"  Skipping log_s_only fit — using init_log_s={args.init_log_s:.4f} directly")
+            _learned_log_s = args.init_log_s
             continue
         calib_model = make_model().to(device)
 
-        if name != "log_s_only":
-            calib_model.log_s.data.fill_(_grid_init_log_s)
-            if args.finetune_s:
-                lr_s = args.lr_s_finetune
+        if args.load_calib_params:
+            ckpt = torch.load(args.load_calib_params, map_location=device, weights_only=False)
+            with torch.no_grad():
+                for n, p in calib_model.named_parameters():
+                    if n in ckpt:
+                        p.data.copy_(ckpt[n].to(device))
+            accelerator.print(f"  Loaded calib params from {args.load_calib_params}")
+
+        if args.init_log_T is not None and hasattr(calib_model, "log_T_list"):
+            with torch.no_grad():
+                for p in calib_model.log_T_list:
+                    p.data.fill_(args.init_log_T)
+            accelerator.print(f"  init_log_T={args.init_log_T:.4f} broadcast to all {len(calib_model.log_T_list)} layers")
+        if args.init_log_T_logit is not None and hasattr(calib_model, "log_T_logit"):
+            with torch.no_grad():
+                calib_model.log_T_logit.data.fill_(args.init_log_T_logit)
+            accelerator.print(f"  init_log_T_logit={args.init_log_T_logit:.4f}")
+
+        if name not in _phase1_names:
+            if not isinstance(calib_model.log_s, nn.Parameter):
+                if hasattr(calib_model, "log_s_list") and any(
+                    p.requires_grad for p in calib_model.log_s_list
+                ):
+                    # Single-phase variant with per-block log_s — learned jointly with log_T
+                    accelerator.print(
+                        f"  single-phase per-block log_s+log_T "
+                        f"({calib_model.n_calib_params} params, no phase-1)"
+                    )
+                    lr_s = None  # run_variant uses args.lr for log_s_list
+                else:
+                    # Fixed buffer (e.g. VPCalibPerLayerLogit) — no init or freeze needed
+                    accelerator.print(f"  log_s fixed buffer = {calib_model.log_s.item():.4f} (not learned)")
+                    lr_s = None
             else:
-                calib_model.log_s.requires_grad_(False)
-                lr_s = None  # frozen; lr_s unused
+                # Initialise log_s from phase-1 result (scalar or [N] tensor), then freeze.
+                _ls = _learned_log_s
+                if isinstance(_ls, torch.Tensor) and _ls.numel() > 1:
+                    calib_model.log_s = nn.Parameter(_ls.to(device).clone(), requires_grad=False)
+                    accelerator.print(f"  Initialising log_s[N] from per-block phase-1 (frozen), mean={_ls.mean():.4f}")
+                else:
+                    val = float(_ls) if not isinstance(_ls, torch.Tensor) else _ls.item()
+                    calib_model.log_s.data.fill_(val)
+                    accelerator.print(f"  Initialising log_s = {val:.4f} (from phase-1, frozen)")
+                if args.finetune_s:
+                    calib_model.log_s.requires_grad_(True)
+                    lr_s = args.lr_s_finetune
+                else:
+                    calib_model.log_s.requires_grad_(False)
+                    lr_s = None
+                if hasattr(calib_model, "log_s_list"):
+                    for p in calib_model.log_s_list:
+                        p.requires_grad_(args.finetune_s)
         else:
             lr_s = None  # use default args.lr
 
-        result = run_variant(calib_model, calib_loader, val_loader, eval_loader, device, args, name, accelerator, lr_s=lr_s)
+        phase_epochs = args.n_epochs_s if name in _phase1_names else args.n_epochs
+        result = run_variant(calib_model, calib_loader, val_loader, eval_loader, device, args, name, accelerator, lr_s=lr_s, n_epochs=phase_epochs, test_loader=test_loader)
+
+        # After phase-1, capture the best log_s for all subsequent phases.
+        if name in _phase1_names:
+            _learned_log_s = result["scalars"]["log_s"]  # scalar or [N] tensor
+            if isinstance(_learned_log_s, torch.Tensor) and _learned_log_s.numel() > 1:
+                accelerator.print(f"  Phase-1 best log_s[N] mean={_learned_log_s.mean():.4f}")
+            else:
+                accelerator.print(f"  Phase-1 best log_s = {float(_learned_log_s):.4f}")
 
         all_results.append(result)
         del calib_model
@@ -1323,14 +1762,56 @@ def main():
     base_tag = (
         f"vp_{args.laplace_hessian}_{args.laplace_sub}_{args.laplace_prior}"
         f"_{args.laplace_optim_step}_rms{args.rms_norm_method}_swiglu{args.swiglu_method}_epochs{args.n_epochs}"
+        + (f"_{args.suffix}" if args.suffix else "")
     )
     results_path = os.path.join(
         f"{args.output_dir}/step_{args.load_step}", f"all_results_{base_tag}.json"
     )
     os.makedirs(os.path.dirname(results_path), exist_ok=True)
+    # Use scalars_json (tensor-free) for serialization
+    all_results_json = [{**r, "scalars": r["scalars_json"]} for r in all_results]
     with open(results_path, "w") as f:
-        json.dump(all_results, f, indent=2)
+        json.dump(all_results_json, f, indent=2)
     accelerator.print(f"\nAll results saved to {results_path}")
+
+    if args.results_dir and args.seed_label:
+        _suffix_str = f"_{args.suffix}" if args.suffix else ""
+        clean_dir  = os.path.join(args.results_dir, args.task_name, args.seed_label)
+        os.makedirs(clean_dir, exist_ok=True)
+        # Pick the per_layer_logit result (only active variant in eval mode)
+        _r = next((r for r in all_results if r.get("variant") == "per_layer_logit"), all_results[-1])
+        _ser = lambda m: {k: (v.tolist() if isinstance(v, torch.Tensor) else v)
+                          for k, v in m.items()} if m is not None else None
+
+        if args.merge_results_into:
+            # Merge val_calibrated / test_calibrated into an existing JSON
+            merge_path = os.path.join(clean_dir, args.merge_results_into)
+            existing = {}
+            if os.path.exists(merge_path):
+                with open(merge_path) as f:
+                    existing = json.load(f)
+            existing[args.val_calib_key] = _ser(_r.get("eval"))
+            if _r.get("test") is not None:
+                existing[args.test_calib_key] = _ser(_r.get("test"))
+            # Reorder: val → test → *_calibrated keys → rest
+            _section_order = ["val", "test", args.val_calib_key, args.test_calib_key, "scalars"]
+            ordered = {k: existing[k] for k in _section_order if k in existing}
+            ordered.update({k: v for k, v in existing.items() if k not in ordered})
+            with open(merge_path, "w") as f:
+                json.dump(ordered, f, indent=2)
+            accelerator.print(f"Calibrated results merged → {merge_path} "
+                              f"[{args.val_calib_key}, {args.test_calib_key}]")
+        else:
+            clean_name = f"{args.swiglu_method}_{args.rms_norm_method}{_suffix_str}.json"
+            clean_path = os.path.join(clean_dir, clean_name)
+            clean_payload = {
+                "val":  _ser(_r.get("eval")),
+                **({"test": _ser(_r.get("test"))} if _r.get("test") is not None else {}),
+                "scalars": _r["scalars_json"],
+            }
+            with open(clean_path, "w") as f:
+                json.dump(clean_payload, f, indent=2)
+            accelerator.print(f"Results saved → {clean_path}")
 
 
 if __name__ == "__main__":

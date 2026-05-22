@@ -1,0 +1,59 @@
+Loading f_mu  from outputs_laplace/ARC-Challenge/meta-llama/Llama-2-7b-chat-hf_lora_lmhead_16_0.1_5e-05_seed2/step_4000/f_mu_kron_all_homo_100.pt
+Loading f_var from outputs_laplace/ARC-Challenge/meta-llama/Llama-2-7b-chat-hf_lora_lmhead_16_0.1_5e-05_seed2/step_4000/f_var_kron_all_homo_100.pt
+Loading labels from outputs/ARC-Challenge/meta-llama/Llama-2-7b-chat-hf_lora_lmhead_16_0.1_5e-05_seed2/step_4000/eval_res_la_kron_all_homo_mc_corr_100.json
+  Val: N=295, C=4, device=cuda
+  Test: N=1165
+
+--- Baseline (uncalibrated, log_s=0.0, s=1.0) ---
+  Val:  {'accuracy': 0.6406779885292053, 'loss': 0.9312278628349304, 'brier': 0.49740150570869446, 'ece': 11.972551345825195, 'ace': 12.639570236206055, 'auc': 18.245643615722656, 'C@0.001': 9.152542114257812, 'C@0.005': 9.152542114257812, 'C@0.01': 9.152542114257812, 'C@0.02': 9.152542114257812, 'C@0.05': 11.86440658569336, 'C@0.1': 25.762712478637695, 'C@0.2': 54.91525650024414, 'C@0.3': 85.08474731445312}
+  Test: {'accuracy': 0.6523604989051819, 'loss': 0.9753341674804688, 'brier': 0.4995786249637604, 'ece': 11.008758544921875, 'ace': 12.160326957702637, 'auc': 17.78173065185547, 'C@0.001': 3.2618026733398438, 'C@0.005': 3.2618026733398438, 'C@0.01': 3.2618026733398438, 'C@0.02': 4.291845321655273, 'C@0.05': 6.952789306640625, 'C@0.1': 23.004291534423828, 'C@0.2': 58.96995544433594, 'C@0.3': 85.57939910888672}
+
+--- GLM variance-scale calibration (200 steps) ---
+  step    1/200  nll=0.9338  log_s=-0.1000  s=0.9048  elapsed=0m00s  eta=0m23s
+  step   10/200  nll=0.8948  log_s=-0.9436  s=0.3892  elapsed=0m00s  eta=0m02s
+  step   20/200  nll=0.9024  log_s=-1.1276  s=0.3238  elapsed=0m00s  eta=0m01s
+  step   30/200  nll=0.8968  log_s=-0.8354  s=0.4337  elapsed=0m00s  eta=0m00s
+  step   40/200  nll=0.8981  log_s=-0.9119  s=0.4017  elapsed=0m00s  eta=0m00s
+  step   50/200  nll=0.8984  log_s=-0.9756  s=0.3770  elapsed=0m00s  eta=0m00s
+  step   60/200  nll=0.9011  log_s=-0.9120  s=0.4017  elapsed=0m00s  eta=0m00s
+  step   70/200  nll=0.9006  log_s=-0.9086  s=0.4031  elapsed=0m00s  eta=0m00s
+  step   80/200  nll=0.9010  log_s=-0.9239  s=0.3970  elapsed=0m00s  eta=0m00s
+  step   90/200  nll=0.8985  log_s=-0.9502  s=0.3866  elapsed=0m00s  eta=0m00s
+  step  100/200  nll=0.9051  log_s=-0.9093  s=0.4028  elapsed=0m00s  eta=0m00s
+  step  110/200  nll=0.8960  log_s=-0.9469  s=0.3879  elapsed=0m00s  eta=0m00s
+  step  120/200  nll=0.8973  log_s=-0.9326  s=0.3935  elapsed=0m00s  eta=0m00s
+  step  130/200  nll=0.8990  log_s=-0.9238  s=0.3970  elapsed=0m00s  eta=0m00s
+  step  140/200  nll=0.9004  log_s=-0.9486  s=0.3873  elapsed=0m00s  eta=0m00s
+  step  150/200  nll=0.8964  log_s=-0.9427  s=0.3896  elapsed=0m00s  eta=0m00s
+  step  160/200  nll=0.8917  log_s=-0.9267  s=0.3959  elapsed=0m00s  eta=0m00s
+  step  170/200  nll=0.8979  log_s=-0.9331  s=0.3933  elapsed=0m00s  eta=0m00s
+  step  180/200  nll=0.8969  log_s=-0.9348  s=0.3927  elapsed=0m00s  eta=0m00s
+  step  190/200  nll=0.8969  log_s=-0.9182  s=0.3992  elapsed=0m00s  eta=0m00s
+  step  200/200  nll=0.8961  log_s=-0.9348  s=0.3927  elapsed=0m00s  eta=0m00s
+
+  Final log_s=-0.9348  s=0.3927
+
+  Evaluating (n_mc=100000) …
+  Val:  {'accuracy': 0.6440678238868713, 'loss': 0.895660400390625, 'brier': 0.4726967513561249, 'ece': 6.289954662322998, 'ace': 8.515118598937988, 'auc': 18.287635803222656, 'C@0.001': 7.118643760681152, 'C@0.005': 7.118643760681152, 'C@0.01': 7.118643760681152, 'C@0.02': 7.118643760681152, 'C@0.05': 9.491525650024414, 'C@0.1': 23.38983154296875, 'C@0.2': 56.61016845703125, 'C@0.3': 84.40678405761719}
+  Test: {'accuracy': 0.6592274904251099, 'loss': 0.9546887278556824, 'brier': 0.47274547815322876, 'ece': 5.1936445236206055, 'ace': 5.388906002044678, 'auc': 17.48816680908203, 'C@0.001': 3.2618026733398438, 'C@0.005': 3.2618026733398438, 'C@0.01': 3.2618026733398438, 'C@0.02': 3.2618026733398438, 'C@0.05': 9.270386695861816, 'C@0.1': 20.94420623779297, 'C@0.2': 61.459224700927734, 'C@0.3': 89.09870910644531}
+
+--- Before vs. after calibration (val) ---
+  metric            before       after       delta
+  ----------------------------------------------
+  accuracy          0.6407      0.6441     +0.0034
+  loss              0.9312      0.8957     -0.0356
+  brier             0.4974      0.4727     -0.0247
+  ece              11.9726      6.2900     -5.6826
+  ace              12.6396      8.5151     -4.1245
+  auc              18.2456     18.2876     +0.0420
+  C@0.001           9.1525      7.1186     -2.0339
+  C@0.005           9.1525      7.1186     -2.0339
+  C@0.01            9.1525      7.1186     -2.0339
+  C@0.02            9.1525      7.1186     -2.0339
+  C@0.05           11.8644      9.4915     -2.3729
+  C@0.1            25.7627     23.3898     -2.3729
+  C@0.2            54.9153     56.6102     +1.6949
+  C@0.3            85.0847     84.4068     -0.6780
+
+  Saved calib params → outputs_laplace/ARC-Challenge/meta-llama/Llama-2-7b-chat-hf_lora_lmhead_16_0.1_5e-05_seed2/step_4000/calib_params_glm_const_posterior.pt
+  Results saved → ./results/ARC-Challenge/seed2/glm_const_posterior.json

@@ -1,0 +1,347 @@
+\documentclass[11pt]{article}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{bm}
+\usepackage{booktabs}
+\usepackage[margin=2.5cm]{geometry}
+
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\Var}{\mathrm{Var}}
+\newcommand{\Cov}{\mathrm{Cov}}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\diag}{\mathrm{diag}}
+\newcommand{\tr}{\mathrm{tr}}
+\newcommand{\kron}{\otimes}
+
+\title{LoRA Variance Propagation with KFAC Posteriors:\\
+       Diagonal and Kronecker Approximations}
+\date{}
+
+\begin{document}
+\maketitle
+
+\section{Kronecker-Factored Approximate Curvature (KFAC)}
+
+\subsection{The Laplace approximation}
+
+Given a trained model with parameters $\bm\theta$, the Laplace approximation
+places a Gaussian posterior over $\bm\theta$ centred at the MAP estimate
+$\hat{\bm\theta}$:
+\begin{equation}
+  p(\bm\theta \mid \mathcal{D}) \approx
+  \mathcal{N}\!\left(\hat{\bm\theta},\; \bm\Lambda^{-1}\right), \qquad
+  \bm\Lambda = \underbrace{-\nabla^2_{\bm\theta} \log p(\mathcal{D}\mid\bm\theta)\big|_{\hat{\bm\theta}}}_{\text{GGN / Fisher}} + \delta\bm I,
+\end{equation}
+where $\delta$ is the prior precision (scalar for a homogeneous Gaussian prior).
+The Hessian $\bm\Lambda$ is intractable to compute and store exactly for large
+networks.
+
+\subsection{KFAC factorisation for a linear layer}
+
+For a linear layer $\bm y = \bm W \bm x$, $\bm W \in \R^{n_\text{out}\times n_\text{in}}$,
+the Gauss–Newton approximation to the block of the Hessian corresponding to
+$\text{vec}(\bm W)$ is approximated by a Kronecker product of two small matrices:
+\begin{equation}
+  \bm\Lambda_W \approx \bm G \kron \bm A + \delta \bm I,
+  \label{eq:kfac}
+\end{equation}
+where
+\begin{align}
+  \bm A &= \E\!\left[\bm x \bm x^\top\right] \in \R^{n_\text{in}\times n_\text{in}}
+    & &\text{(input covariance, averaged over the data)}, \\
+  \bm G &= \E\!\left[\bm g \bm g^\top\right] \in \R^{n_\text{out}\times n_\text{out}}
+    & &\text{(gradient covariance, } \bm g = \nabla_{\bm y}\mathcal{L}\text{)}.
+\end{align}
+The Kronecker product $\bm G \kron \bm A$ is an $(n_\text{out} n_\text{in})
+\times (n_\text{out} n_\text{in})$ matrix whose $(ij,kl)$ entry equals
+$G_{ik} A_{jl}$, capturing how the precision correlates weight entries that
+share the same output neuron or the same input.
+
+\subsection{Eigendecomposition and posterior covariance}
+\label{sec:eigen}
+
+Each factor is diagonalised:
+$\bm G = \bm Q_G \bm\Lambda_G \bm Q_G^\top$,
+$\bm A = \bm Q_A \bm\Lambda_A \bm Q_A^\top$.
+Using the mixed-product property $(\bm P \kron \bm Q)(\bm R \kron \bm S)
+= (\bm P\bm R)\kron(\bm Q\bm S)$:
+\begin{equation}
+  \bm G \kron \bm A = (\bm Q_G \kron \bm Q_A)\,
+  (\bm\Lambda_G \kron \bm\Lambda_A)\,
+  (\bm Q_G \kron \bm Q_A)^\top.
+\end{equation}
+The eigenvalues of the Kronecker product are the pairwise products
+$\lambda^G_i \lambda^A_j$. Adding the prior $\delta \bm I$ shifts every
+eigenvalue, giving the posterior covariance
+\begin{equation}
+  \bm\Sigma_W = \bm\Lambda_W^{-1} =
+  (\bm Q_G \kron \bm Q_A)\,
+  \bm D\,
+  (\bm Q_G \kron \bm Q_A)^\top, \qquad
+  D_{(i,j),(i,j)} = \frac{1}{\lambda^G_i \lambda^A_j + \delta}.
+\end{equation}
+
+\subsection{Marginal (diagonal) variances}
+
+The marginal posterior variance of each weight element $W_{ab}$ is the
+$(a,b)$-th diagonal entry of $\bm\Sigma_W$.
+Using vec-indexing $(a,b) \leftrightarrow (a n_\text{in} + b)$:
+\begin{equation}
+  \boxed{
+    \Var[W_{ab}] = \sum_{i,j}
+    \frac{Q^G_{ai}{}^2\; Q^A_{bj}{}^2}{\lambda^G_i \lambda^A_j + \delta}
+  }
+  = \Bigl[(\bm Q_G^{\odot 2})\;\bm D\;(\bm Q_A^{\odot 2})^\top\Bigr]_{ab},
+  \label{eq:diagvar}
+\end{equation}
+where $\bm Q^{\odot 2}$ denotes element-wise squaring and
+$\bm D_{ij} = 1/(\lambda^G_i \lambda^A_j + \delta)$.
+The matrix expression is exact within the KFAC approximation.
+
+For LoRA the posterior covariance of $\bm A \in \R^{r \times d_\text{in}}$
+decomposes as
+$\bm\Sigma_A = \hat{\bm G}_A^{-1} \kron \hat{\bm A}_A^{-1}$, where
+$\hat{\bm G}_A \in \R^{r \times r}$ and
+$\hat{\bm A}_A \in \R^{d_\text{in} \times d_\text{in}}$
+are the two KFAC factors.
+The per-element covariance is
+\begin{equation}
+  \Cov[A_{ki},\; A_{k'i'}] =
+  (\hat{\bm G}_A^{-1})_{kk'}\,(\hat{\bm A}_A^{-1})_{ii'}.
+\end{equation}
+Analogously for $\bm B \in \R^{d_\text{out} \times r}$:
+$\Cov[B_{jk}, B_{j'k'}] = (\hat{\bm G}_B^{-1})_{jj'}\,(\hat{\bm A}_B^{-1})_{kk'}$.
+
+\bigskip\hrule\bigskip
+
+\section{Variance Propagation Through a LoRA Layer}
+
+\subsection{Setup}
+
+The effective forward pass is
+\begin{equation}
+  \bm y = (\bm W_\text{base} + s\,\bm B\bm A)\,\bm x + \bm b,
+\end{equation}
+with $s = \alpha/r$ (LoRA scaling), $\bm W_\text{base}$ frozen and deterministic,
+and independent Gaussian posteriors on $\bm A$, $\bm B$, and (propagated)
+diagonal uncertainty on $\bm x$:
+\begin{align*}
+  \bm A &\sim \mathcal{N}(\bm A_m,\;\bm\Sigma_A), \quad
+  \bm B \sim \mathcal{N}(\bm B_m,\;\bm\Sigma_B), \quad
+  \bm x \sim \mathcal{N}(\bm x_m,\;\diag(\bm x_v)).
+\end{align*}
+All three are mutually independent. We want the (diagonal) output covariance.
+
+\subsection{Mean (identical in both modes)}
+
+\begin{equation}
+  \bm y_m = \bm x_m^\top (\bm W_\text{base} + s\,\bm B_m\bm A_m)^\top.
+\end{equation}
+
+\subsection{Total output variance — three terms}
+
+By independence of $\bm W_\text{base}$, $\bm A$, $\bm B$ and $\bm x$:
+\begin{equation}
+  \Var[y_j] = \underbrace{{\bm x_v^\top (\bm w^j_\text{base})^{\odot 2}}}_{\text{base}}
+  + \underbrace{s^2 \Var[\textstyle\sum_k B_{jk} z_k]}_{\text{LoRA}}
+  + \underbrace{2\,\bm x_v^\top (\bm w^j_\text{base} \odot \bm w^j_\text{eff})}_{\text{cross}},
+\end{equation}
+where $\bm w^j_\text{eff} = s(\bm B_m\bm A_m)_{j,:}$ is the $j$-th row of the
+mean LoRA weight and $z_k = \sum_i A_{ki} x_i$.
+
+\paragraph{Base and cross terms} are exact and mode-independent:
+\begin{align}
+  \text{base}_j &= \bm x_v^\top (\bm w^j_\text{base})^{\odot 2}, \\
+  \text{cross}_j &= 2\,\bm x_v^\top (\bm w^j_\text{base} \odot \bm w^j_\text{eff}).
+\end{align}
+
+\paragraph{The LoRA term} depends on the rank covariance $\Cov[\bm z, \bm z]$
+and is where the two modes differ.
+
+\bigskip\hrule\bigskip
+
+\section{Diagonal Mode}
+
+\subsection{Diagonal approximation of $\Cov[\bm z, \bm z]$}
+
+The diagonal mode uses only the marginal variances $\Var[A_{ki}]
+= (\hat{\bm G}_A^{-1})_{kk}\,(\hat{\bm A}_A^{-1})_{ii}$, dropping all
+off-diagonal elements. This means each rank component $z_k$ is treated as
+independent of the others. The per-component variance is
+\begin{equation}
+  \Var[z_k] \approx \sum_i x_{v,i}\,(A_{v,ki} + A_{m,ki}^2)
+             + \sum_i x_{m,i}^2\, A_{v,ki}, \quad
+  A_{v,ki} = s_v\,(\hat{\bm G}_A^{-1})_{kk}\,(\hat{\bm A}_A^{-1})_{ii},
+\end{equation}
+where $s_v$ is \texttt{var\_scale}.  This is the standard delta-method formula for
+$z_k = \sum_i A_{ki} x_i$ under element independence.
+
+\subsection{LoRA output variance in diagonal mode}
+
+Chaining through $\bm B$ with the rank-independence assumption:
+\begin{equation}
+  \boxed{
+  \Var^{\text{diag}}[y_{\text{LoRA},j}] = s^2\!\left[
+    \sum_k z_{v,k}(B_{v,jk} + B_{m,jk}^2)
+    + \sum_k z_{m,k}^2\, B_{v,jk}
+  \right],
+  }
+\end{equation}
+where $B_{v,jk} = s_v\,(\hat{\bm G}_B^{-1})_{jj}\,(\hat{\bm A}_B^{-1})_{kk}$.
+
+\paragraph{What is dropped.}
+The diagonal mode ignores the cross-rank covariance terms
+$(\hat{\bm G}_A^{-1})_{kk'}\,(k\neq k')$ when projecting through $\bm B_m$,
+and approximates $(W_\text{eff,ji})^2 = (\sum_k B_{jk} A_{ki})^2$ by
+$\sum_k B_{jk}^2 A_{ki}^2$, discarding the mixed terms.
+
+\bigskip\hrule\bigskip
+
+\section{Kronecker Mode}
+
+\subsection{Exact rank covariance $\Cov[\bm z, \bm z]$}
+
+Under the KFAC posterior with diagonal input covariance on $\bm x$, the full
+rank covariance of $\bm z = \bm A \bm x$ is
+\begin{equation}
+  \Cov[z_k, z_{k'}] =
+    \Cov[\textstyle\sum_i A_{ki} x_i,\; \sum_{i'} A_{k'i'} x_{i'}].
+\end{equation}
+Expanding using independence of $\bm A$ and $\bm x$, and the
+KFAC structure $\Cov[A_{ki}, A_{k'i'}] = (\hat{\bm G}_A^{-1})_{kk'}\,(\hat{\bm A}_A^{-1})_{ii'}$:
+\begin{align}
+  \Cov[z_k, z_{k'}]
+  &= \sum_{i,i'} \Cov[A_{ki} x_i,\, A_{k'i'} x_{i'}] \notag\\
+  &= (\hat{\bm G}_A^{-1})_{kk'}\underbrace{\sum_i (\hat{\bm A}_A^{-1})_{ii}(x_{v,i} + x_{m,i}^2)}_{\alpha_A}
+    + \sum_i A_{m,ki} A_{m,k'i}\, x_{v,i}.
+\end{align}
+In matrix form:
+\begin{equation}
+  \boxed{
+  \Cov[\bm z, \bm z] = s_v\,\hat{\bm G}_A^{-1}\,\alpha_A
+  \;+\; \bm A_m\,\diag(\bm x_v)\,\bm A_m^\top
+  }
+  \;\in \R^{r \times r},
+  \label{eq:covz}
+\end{equation}
+where the scalar $\alpha_A = \diag(\hat{\bm A}_A^{-1})^\top (\bm x_v + \bm x_m^{\odot 2})$
+uses only the \emph{diagonal} of $\hat{\bm A}_A^{-1}$
+(the full $d_\text{in} \times d_\text{in}$ matrix is too large to use).
+
+Both terms of \eqref{eq:covz} are of size $r \times r$ and computed in
+$O(r^2 d_\text{in})$ per token — identical to the cost of one LoRA forward pass.
+
+\subsection{LoRA output variance in Kronecker mode}
+
+For output neuron $j$, the LoRA variance decomposes into a $\bm B$-uncertainty
+term and a $\bm B$-mean-projection term.
+
+\paragraph{$\bm B$-uncertainty.}
+$\Cov[B_{jk}, B_{jk'}] = s_v\,(\hat{\bm G}_B^{-1})_{jj}\,(\hat{\bm A}_B^{-1})_{kk'}$, so
+\begin{equation}
+  \Var_B[y_j] = s_v\,(\hat{\bm G}_B^{-1})_{jj}
+  \underbrace{\Bigl[\tr(\hat{\bm A}_B^{-1}\,\Cov[\bm z,\bm z])
+                    + \bm z_m^\top \hat{\bm A}_B^{-1}\,\bm z_m\Bigr]}_{\beta}.
+\end{equation}
+Both $\hat{\bm A}_B^{-1}$ and $\hat{\bm G}_B^{-1}$ are $r \times r$; all
+operations are $O(r^2)$.
+
+\paragraph{$\bm B$-mean projection.}
+\begin{equation}
+  \Var_{B_m}[y_j] = \bigl(\bm B_m\,\Cov[\bm z,\bm z]\,\bm B_m^\top\bigr)_{jj}.
+\end{equation}
+The diagonal is computed as $(\bm B_m \hat{\bm C}_z * \bm B_m)\bm 1_r$ where
+$\hat{\bm C}_z = \Cov[\bm z,\bm z]$, costing $O(d_\text{out}\,r^2)$.
+
+\paragraph{Total Kronecker-mode LoRA variance.}
+\begin{equation}
+  \boxed{
+  \Var^\text{kron}[y_{\text{LoRA},j}] = s^2\!\left[
+    s_v\,(\hat{\bm G}_B^{-1})_{jj}\,\beta
+    \;+\;
+    \bigl(\bm B_m\,\Cov[\bm z,\bm z]\,\bm B_m^\top\bigr)_{jj}
+  \right].
+  }
+  \label{eq:kronvar}
+\end{equation}
+
+\subsection{What is gained over the diagonal mode}
+
+\begin{enumerate}
+\item \textbf{Full $\hat{\bm G}_A^{-1}$ in the $\bm B_m$ projection.}
+  The diagonal mode computes
+  $\sum_k (\hat{\bm G}_A^{-1})_{kk}\,\alpha_A\,B_{m,jk}^2$,
+  while \eqref{eq:kronvar} uses
+  $\alpha_A\,\bm b_j^\top \hat{\bm G}_A^{-1}\bm b_j$,
+  capturing cross-rank terms $(\hat{\bm G}_A^{-1})_{kk'}B_{m,jk}B_{m,jk'}$
+  ($k \neq k'$).
+
+\item \textbf{Exact $(W_\text{eff,ji})^2$ vs.\ $(W_{A,ki})^2(W_{B,jk})^2$.}
+  The second term in $\Cov[\bm z,\bm z]$ gives the projection
+  $(\bm B_m\bm A_m\diag(\bm x_v)\bm A_m^\top\bm B_m^\top)_{jj}
+  = \sum_i x_{v,i}(W_\text{eff,ji})^2$,
+  exact instead of the diagonal approximation
+  $\sum_{k,i} B_{m,jk}^2 A_{m,ki}^2 x_{v,i}$.
+
+\item \textbf{Full $\hat{\bm A}_B^{-1}$ in the $\bm z_m$ quadratic form.}
+  The diagonal mode uses $\sum_k (\hat{\bm A}_B^{-1})_{kk}\,z_{m,k}^2$; the
+  Kronecker mode uses $\bm z_m^\top\hat{\bm A}_B^{-1}\bm z_m$, which captures
+  correlations in $\bm B$'s input-side posterior.
+\end{enumerate}
+
+\subsection{Remaining approximation}
+
+The one place where a diagonal approximation is retained is $\alpha_A$:
+the quadratic form $\bm x_m^\top \hat{\bm A}_A^{-1}\bm x_m$ is replaced by
+$\diag(\hat{\bm A}_A^{-1})^\top\bm x_m^{\odot 2}$ because $\hat{\bm A}_A^{-1}$
+is $d_\text{in}\times d_\text{in}$ (e.g.\ $4096\times 4096$), making the full
+quadratic form as expensive as a dense forward pass.
+
+\bigskip\hrule\bigskip
+
+\section{Computational Cost Summary}
+
+\begin{center}
+\begin{tabular}{lll}
+\toprule
+Operation & Diagonal mode & Kronecker mode \\
+\midrule
+$z_m = \bm A_m \bm x_m$ & $O(Tr d_\text{in})$ & $O(Tr d_\text{in})$ \\
+$z_v$ or $\Cov[\bm z,\bm z]$ & $O(Tr d_\text{in})$ & $O(Tr d_\text{in}) + O(Tr^2)$ \\
+$\beta$ & $O(Tr)$ & $O(Tr^2)$ \\
+$\bm B_m$ projection & $O(T d_\text{out} r)$ & $O(T d_\text{out} r^2)$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+$T$ = batch $\times$ sequence length.  For $r{=}8$, $d_\text{in}{=}d_\text{out}{=}4096$,
+the extra $r^2 = 64$ factor introduces $<2\%$ overhead relative to the dense
+forward pass ($O(T d_\text{in} d_\text{out})$).
+
+\bigskip\hrule\bigskip
+
+\section{Implementation Notes}
+
+\paragraph{\texttt{extract\_kron\_lora\_factors}.}
+After \texttt{extract\_param\_variances} sets \texttt{H.deltas}, this function
+iterates over the \texttt{KronDecomposed} object's eigenvectors and eigenvalues.
+For each parameter with two KFAC factors of dimensions $(n_1, n_2)$, it computes
+\begin{equation}
+  \hat{\bm G}^{-1} = \bm Q_1 \diag\!\left(\tfrac{1}{\bm l_1 + \delta}\right)\bm Q_1^\top, \quad
+  \hat{\bm A}^{-1} = \bm Q_2 \diag\!\left(\tfrac{1}{\bm l_2 + \delta}\right)\bm Q_2^\top,
+\end{equation}
+and stores the full matrix only when the dimension is $\leq 64$
+(i.e.\ $r \times r$ rank blocks), plus the diagonal for the large factor.
+
+\paragraph{Gradient flow.}
+The term $\bm A_m\diag(\bm x_v)\bm A_m^\top$ has no gradient w.r.t.\
+\texttt{var\_scale} (neither $\bm A_m$ nor $\bm x_v$ depends on it), so it is
+computed under \texttt{torch.no\_grad()} to avoid storing the $[*,r,d_\text{in}]$
+intermediate during the calibration backward pass.
+
+\paragraph{Activating kron mode.}
+\texttt{LoRALinearMVP} uses kron mode automatically when \texttt{G\_A\_inv}
+is not \texttt{None}.  This is set by \texttt{build\_vp\_backbone} whenever
+\texttt{extract\_kron\_lora\_factors} returns non-empty results, which requires
+a KFAC (not diagonal) Hessian (\texttt{--laplace\_hessian kron}).
+
+\end{document}

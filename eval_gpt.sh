@@ -6,14 +6,11 @@ export TORCHDYNAMO_DISABLE=1
 #steps=(4000)
 #splits=(train val test)
 
-tasks=(${TASKS:-ARC-Easy})
-seeds=(${SEEDS:-21})
-steps=(${STEPS:-4000})
-splits=(${SPLITS:-val})
-
-tasks=(ARC-Easy)
-seeds=(21)
-splits=(val test)
+IFS=' ' read -r -a tasks  <<< "${TASKS:-ARC-Easy openbookqa ARC-Challenge}"
+IFS=' ' read -r -a seeds  <<< "${SEEDS:-21 42 87 13 100}"
+IFS=' ' read -r -a steps  <<< "${STEPS:-4000}"
+IFS=' ' read -r -a splits <<< "${SPLITS:-val test}"
+results_dir=${RESULTS_DIR:-./results}
 
 declare -A seed_to_label=([21]=seed1 [42]=seed2 [87]=seed3 [13]=seed4 [100]=seed5)
 
@@ -49,8 +46,10 @@ for task in "${tasks[@]}"; do
                 --checkpoint_dir "$checkpoint_dir" \
                 --splits ${splits[@]} \
                 --seed $seed \
+                --seed_label $seed_label \
                 --per_device_eval_batch_size $eval_bs \
                 --max_length $max_len \
+                --results_dir $results_dir \
                 2>&1 | tee "$log_file"
         done
     done

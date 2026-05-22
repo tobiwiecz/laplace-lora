@@ -197,6 +197,12 @@ def parse_args():
     parser.add_argument("--testing_set", type=str, default='train_val')
     parser.add_argument("--laplace_predict", type=str, default='mc_corr', help='probit bridge bridge_norm mc_indep mc_corr')
     parser.add_argument("--lm_head", action="store_true", default=True)
+    parser.add_argument("--also_eval_test", action="store_true", default=False,
+                        help="Additionally run GLM inference on the HF test split and save f_mu_test/f_var_test")
+    parser.add_argument("--load_laplace",   action="store_true", default=False,
+                        help="Load saved H and prior_precision from disk instead of refitting")
+    parser.add_argument("--skip_val_eval",  action="store_true", default=False,
+                        help="Skip the validation inference loop (useful with --load_laplace --also_eval_test)")
     args = parser.parse_args()
 
 
@@ -627,124 +633,188 @@ def main(load_step):
                     hessian_structure=args.laplace_hessian)
 
 
-    accelerator.print('----fitting Laplace-----')
-    # For diagonal Hessian, asdl's cov_diag_weight does a direct matmul of
-    # in_data and out_grads and requires them to share dtype.  Backbone LoRA
-    # layers receive fp16 activations from the quantised model, causing a
-    # Half != float error.  Register pre-forward hooks to cast inputs to fp32
-    # on all trainable linear layers that are not the lm_head (which already
-    # casts internally via CustomLMHead_lora.forward).
-    _fp32_hooks = []
-    if args.laplace_hessian == 'diag':
-        def _cast_to_fp32(module, args):
-            return tuple(a.float() if isinstance(a, torch.Tensor) else a for a in args)
-        for name, module in model.named_modules():
-            if isinstance(module, torch.nn.Linear) and 'lm_head' not in name:
-                if any(p.requires_grad for p in module.parameters(recurse=False)):
-                    _fp32_hooks.append(module.register_forward_pre_hook(_cast_to_fp32))
-    la.fit(train_dataloader)
-    for h in _fp32_hooks:
-        h.remove()
-    torch.save({'H': la.H, 'n_outputs': la.n_outputs},
-               f'{laplace_output_dir}/laplace_H_{args.laplace_hessian}_{args.laplace_sub}.pt')
+    H_path  = f'{laplace_output_dir}/laplace_H_{args.laplace_hessian}_{args.laplace_sub}.pt'
+    pp_path = f'{laplace_output_dir}/prior_precision_{args.laplace_hessian}_{args.laplace_sub}_{args.laplace_prior}_{args.laplace_optim_step}.pt'
 
-    if args.testing_set == 'val':
-        prior_precision = la.optimize_prior_precision(method='marglik', n_steps=args.laplace_optim_step, lr=1e-1)
-        accelerator.print(f'prior precision: {prior_precision}')    
+    if args.load_laplace:
+        accelerator.print(f'----loading Laplace from disk ({H_path}) -----')
+        H_ckpt = torch.load(H_path, map_location=accelerator.device, weights_only=False)
+        la.H         = H_ckpt['H']
+        la.n_outputs = H_ckpt['n_outputs']
+        setattr(la.model, 'output_size', la.n_outputs)
+        prior_precision = torch.load(pp_path, map_location=accelerator.device, weights_only=False)
+        la.prior_precision = prior_precision
+        accelerator.print(f'prior precision (loaded): {prior_precision}')
     else:
-        prior_precision = la.optimize_prior_precision(method='val_gd', val_loader=val_dataloader, n_steps=args.laplace_optim_step, lr=1e-1)
-    
-    torch.save(prior_precision, f'{laplace_output_dir}/prior_precision_{args.laplace_hessian}_{args.laplace_sub}_{args.laplace_prior}_{args.laplace_optim_step}.pt')
-    accelerator.print('prior precision', prior_precision)
+        accelerator.print('----fitting Laplace-----')
+        _fp32_hooks = []
+        if args.laplace_hessian == 'diag':
+            def _cast_to_fp32(module, args):
+                return tuple(a.float() if isinstance(a, torch.Tensor) else a for a in args)
+            for name, module in model.named_modules():
+                if isinstance(module, torch.nn.Linear) and 'lm_head' not in name:
+                    if any(p.requires_grad for p in module.parameters(recurse=False)):
+                        _fp32_hooks.append(module.register_forward_pre_hook(_cast_to_fp32))
+        la.fit(train_dataloader)
+        for h in _fp32_hooks:
+            h.remove()
+        torch.save({'H': la.H, 'n_outputs': la.n_outputs}, H_path)
+
+        if args.testing_set == 'val':
+            prior_precision = la.optimize_prior_precision(method='marglik', n_steps=args.laplace_optim_step, lr=1e-1)
+            accelerator.print(f'prior precision: {prior_precision}')
+        else:
+            prior_precision = la.optimize_prior_precision(method='val_gd', val_loader=val_dataloader, n_steps=args.laplace_optim_step, lr=1e-1)
+
+        torch.save(prior_precision, pp_path)
+        accelerator.print('prior precision', prior_precision)
 
 
 
-    samples_seen = 0
-    output_dicts = []
-    f_mu_list = []
-    f_var_list = []
-    for step, batch in tqdm(enumerate(eval_dataloader), total=len(eval_dataloader), desc="Eval", unit="batch"):
-        with torch.no_grad():
-            f_mu, f_var = la._glm_predictive_distribution(batch)
-            f_mu_list.append(f_mu)
-            f_var_list.append(f_var)
-        
-        samples = 100000
-        f_mu = f_mu.expand(samples, -1, -1)
-        f_var = f_var.expand(samples, -1, -1, -1)
+    if args.skip_val_eval:
+        accelerator.print("Skipping val inference loop (--skip_val_eval).")
+    else:
+        samples_seen = 0
+        output_dicts = []
+        f_mu_list = []
+        f_var_list = []
+        for step, batch in tqdm(enumerate(eval_dataloader), total=len(eval_dataloader), desc="Eval", unit="batch"):
+            with torch.no_grad():
+                f_mu, f_var = la._glm_predictive_distribution(batch)
+                f_mu_list.append(f_mu)
+                f_var_list.append(f_var)
 
-        logits = f_mu + (torch.linalg.cholesky(f_var + torch.eye(f_var.shape[-1]).to(f_var.device)*1e-6).to(f_mu.dtype) @ torch.randn_like(f_mu).unsqueeze(-1).to(f_mu.dtype).to(accelerator.device)).squeeze(-1)
-        logits = torch.softmax(logits, dim=-1).mean(0)
-        
-        predictions = logits.argmax(dim=-1)
+            samples = 100000
+            f_mu = f_mu.expand(samples, -1, -1)
+            f_var = f_var.expand(samples, -1, -1, -1)
 
-        logits = logits.detach()
-        for j in range(logits.size(0)):
-            probs = logits[j]  # F.softmax(logits[j], -1) do softmax when evaluating for ECE/NLL
-            label = batch["labels"]
-            output_dict = {
-                'index': args.per_device_eval_batch_size * step + j,
-                'true': label[j].item(),
-                'pred': logits[j].argmax().item(),
-                'conf': probs.max().item(),
-                'logits': logits[j].cpu().numpy().tolist(),
-                'probs': probs.cpu().numpy().tolist(),
-            }
-            output_dicts.append(output_dict)
-            
-        predictions, references = accelerator.gather((predictions, batch["labels"]))
-        # If we are in a multiprocess environment, the last batch has duplicates
-        if accelerator.num_processes > 1:
-            if step == len(eval_dataloader) - 1:
-                predictions = predictions[: len(eval_dataloader.dataset) - samples_seen]
-                references = references[: len(eval_dataloader.dataset) - samples_seen]
-            else:
-                samples_seen += references.shape[0]
-        metric.add_batch(
-            predictions=predictions,
-            references=references,
+            logits = f_mu + (torch.linalg.cholesky(f_var + torch.eye(f_var.shape[-1]).to(f_var.device)*1e-6).to(f_mu.dtype) @ torch.randn_like(f_mu).unsqueeze(-1).to(f_mu.dtype).to(accelerator.device)).squeeze(-1)
+            logits = torch.softmax(logits, dim=-1).mean(0)
+
+            predictions = logits.argmax(dim=-1)
+
+            logits = logits.detach()
+            for j in range(logits.size(0)):
+                probs = logits[j]  # F.softmax(logits[j], -1) do softmax when evaluating for ECE/NLL
+                label = batch["labels"]
+                output_dict = {
+                    'index': args.per_device_eval_batch_size * step + j,
+                    'true': label[j].item(),
+                    'pred': logits[j].argmax().item(),
+                    'conf': probs.max().item(),
+                    'logits': logits[j].cpu().numpy().tolist(),
+                    'probs': probs.cpu().numpy().tolist(),
+                }
+                output_dicts.append(output_dict)
+
+            predictions, references = accelerator.gather((predictions, batch["labels"]))
+            # If we are in a multiprocess environment, the last batch has duplicates
+            if accelerator.num_processes > 1:
+                if step == len(eval_dataloader) - 1:
+                    predictions = predictions[: len(eval_dataloader.dataset) - samples_seen]
+                    references = references[: len(eval_dataloader.dataset) - samples_seen]
+                else:
+                    samples_seen += references.shape[0]
+            metric.add_batch(
+                predictions=predictions,
+                references=references,
+            )
+
+        f_mu = torch.cat(f_mu_list, dim=0)
+        f_var = torch.cat(f_var_list, dim=0)
+        accelerator.print('f_mu shape', f_mu.shape)
+        accelerator.print('f_var shape', f_var.shape)
+        accelerator.print(f_mu)
+        accelerator.print(f_var)
+        torch.save(f_mu, f'{laplace_output_dir}/f_mu_{args.laplace_hessian}_{args.laplace_sub}_{args.laplace_prior}_{args.laplace_optim_step}.pt')
+        torch.save(f_var, f'{laplace_output_dir}/f_var_{args.laplace_hessian}_{args.laplace_sub}_{args.laplace_prior}_{args.laplace_optim_step}.pt')
+
+        output_path = os.path.join(output_dir, f'eval_res_la_{args.laplace_hessian}_{args.laplace_sub}_{args.laplace_prior}_{args.laplace_predict}_{args.laplace_optim_step}.json')
+        accelerator.print(f'writing outputs to \'{output_path}\'')
+
+        # delete the file if it exists
+        if os.path.isfile(output_path):
+            os.remove(output_path)
+
+        with open(output_path, 'w+') as f:
+            for i, output_dict in enumerate(output_dicts):
+                output_dict_str = json.dumps(output_dict)
+                f.write(f'{output_dict_str}\n')
+
+        eval_metric = metric.compute()
+
+        all_probs = torch.tensor([d["probs"] for d in output_dicts], dtype=torch.float32)
+        all_labels = torch.tensor([d["true"] for d in output_dicts], dtype=torch.long)
+        all_results = {k.removeprefix("eval_"): v for k, v in eval_metric.items()}
+        all_results.update(compute_all_metrics(all_probs, all_labels))
+
+        all_results_path = os.path.join(output_dir, f"all_results_la_{args.laplace_hessian}_{args.laplace_sub}_{args.laplace_prior}_{args.laplace_predict}_{args.laplace_optim_step}.json")
+
+        # delete the all_results file if it exists
+        if os.path.isfile(all_results_path):
+            os.remove(all_results_path)
+
+        # write to the all_results file
+        with open(all_results_path, "w") as f:
+            json.dump(all_results, f)
+
+    # ── Optional: evaluate on the actual HF test split ───────────────────────
+    if args.also_eval_test and "test" in processed_datasets:
+        accelerator.print("\n=== Running GLM inference on test split ===")
+        test_dataloader = DataLoader(
+            processed_datasets["test"], shuffle=False,
+            collate_fn=data_collator, batch_size=args.per_device_eval_batch_size
         )
+        test_dataloader = accelerator.prepare(test_dataloader)
 
-    f_mu = torch.cat(f_mu_list, dim=0)
-    f_var = torch.cat(f_var_list, dim=0)
-    accelerator.print('f_mu shape', f_mu.shape)
-    accelerator.print('f_var shape', f_var.shape)
-    accelerator.print(f_mu)
-    accelerator.print(f_var)
-    torch.save(f_mu, f'{laplace_output_dir}/f_mu_{args.laplace_hessian}_{args.laplace_sub}_{args.laplace_prior}_{args.laplace_optim_step}.pt')
-    torch.save(f_var, f'{laplace_output_dir}/f_var_{args.laplace_hessian}_{args.laplace_sub}_{args.laplace_prior}_{args.laplace_optim_step}.pt')
+        f_mu_test_list, f_var_test_list, test_output_dicts = [], [], []
+        for step, batch in tqdm(enumerate(test_dataloader), total=len(test_dataloader), desc="Test", unit="batch"):
+            with torch.no_grad():
+                f_mu_t, f_var_t = la._glm_predictive_distribution(batch)
+                f_mu_test_list.append(f_mu_t)
+                f_var_test_list.append(f_var_t)
 
-    output_path = os.path.join(output_dir, f'eval_res_la_{args.laplace_hessian}_{args.laplace_sub}_{args.laplace_prior}_{args.laplace_predict}_{args.laplace_optim_step}.json')
-    accelerator.print(f'writing outputs to \'{output_path}\'')
+            samples = 100000
+            logits = f_mu_t.expand(samples, -1, -1) + (
+                torch.linalg.cholesky(f_var_t.expand(samples, -1, -1, -1) +
+                    torch.eye(f_var_t.shape[-1], device=f_var_t.device) * 1e-6
+                ).to(f_mu_t.dtype) @
+                torch.randn(samples, f_mu_t.shape[0], f_mu_t.shape[1], 1,
+                            device=f_mu_t.device, dtype=f_mu_t.dtype)
+            ).squeeze(-1)
+            logits = torch.softmax(logits, dim=-1).mean(0)
 
-    # delete the file if it exists
-    if os.path.isfile(output_path):
-        os.remove(output_path)
+            for j in range(logits.size(0)):
+                probs = logits[j]
+                label = batch["labels"]
+                test_output_dicts.append({
+                    'index': args.per_device_eval_batch_size * step + j,
+                    'true':  label[j].item(),
+                    'pred':  logits[j].argmax().item(),
+                    'conf':  probs.max().item(),
+                    'probs': probs.cpu().numpy().tolist(),
+                })
 
-    with open(output_path, 'w+') as f:
-        for i, output_dict in enumerate(output_dicts):
-            output_dict_str = json.dumps(output_dict)
-            f.write(f'{output_dict_str}\n')
+        f_mu_test  = torch.cat(f_mu_test_list,  dim=0)
+        f_var_test = torch.cat(f_var_test_list, dim=0)
+        la_tag = f'{args.laplace_hessian}_{args.laplace_sub}_{args.laplace_prior}_{args.laplace_optim_step}'
+        torch.save(f_mu_test,  f'{laplace_output_dir}/f_mu_test_{la_tag}.pt')
+        torch.save(f_var_test, f'{laplace_output_dir}/f_var_test_{la_tag}.pt')
+        accelerator.print(f'Saved f_mu_test / f_var_test  ({f_mu_test.shape[0]} examples)')
 
-    eval_metric = metric.compute()
+        test_res_path = os.path.join(output_dir,
+            f'eval_res_la_{args.laplace_hessian}_{args.laplace_sub}_{args.laplace_prior}'
+            f'_{args.laplace_predict}_{args.laplace_optim_step}_test.json')
+        with open(test_res_path, 'w+') as f:
+            for d in test_output_dicts:
+                f.write(json.dumps(d) + '\n')
+        accelerator.print(f'Saved test eval_res → {test_res_path}')
+    elif args.also_eval_test:
+        accelerator.print("WARNING: --also_eval_test set but 'test' split not found in dataset; skipping.")
 
-    all_probs = torch.tensor([d["probs"] for d in output_dicts], dtype=torch.float32)
-    all_labels = torch.tensor([d["true"] for d in output_dicts], dtype=torch.long)
-    all_results = {k.removeprefix("eval_"): v for k, v in eval_metric.items()}
-    all_results.update(compute_all_metrics(all_probs, all_labels))
-
-    all_results_path = os.path.join(output_dir, f"all_results_la_{args.laplace_hessian}_{args.laplace_sub}_{args.laplace_prior}_{args.laplace_predict}_{args.laplace_optim_step}.json")
-
-    # delete the all_results file if it exists
-    if os.path.isfile(all_results_path):
-        os.remove(all_results_path)
-
-    
-    # write to the all_results file
-    with open(all_results_path, "w") as f:
-        json.dump(all_results, f)
-
-    del model, train_dataloader, la, f_mu, f_var, f_mu_list, f_var_list, metric, eval_metric, output_dicts, eval_dataloader
+    del model, train_dataloader, la, metric, eval_dataloader
+    if not args.skip_val_eval:
+        del f_mu, f_var, f_mu_list, f_var_list, eval_metric, output_dicts
     torch.cuda.empty_cache()
 
 

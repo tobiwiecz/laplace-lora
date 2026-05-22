@@ -1,0 +1,246 @@
+[transformers] loading configuration file config.json from cache at /pfss/mlde/workspaces/mlde_wsp_Rohrbach/users/tw65vyka/.cache/huggingface/hub/models--meta-llama--Llama-2-7b-chat-hf/snapshots/f5db02db724555f92da89c216ac04704f23d4590/config.json
+[transformers] Model config LlamaConfig {
+  "architectures": [
+    "LlamaForCausalLM"
+  ],
+  "attention_bias": false,
+  "attention_dropout": 0.0,
+  "bos_token_id": 1,
+  "dtype": "float16",
+  "eos_token_id": 2,
+  "head_dim": 128,
+  "hidden_act": "silu",
+  "hidden_size": 4096,
+  "initializer_range": 0.02,
+  "intermediate_size": 11008,
+  "max_position_embeddings": 4096,
+  "mlp_bias": false,
+  "model_type": "llama",
+  "num_attention_heads": 32,
+  "num_hidden_layers": 32,
+  "num_key_value_heads": 32,
+  "pad_token_id": null,
+  "pretraining_tp": 1,
+  "rms_norm_eps": 1e-05,
+  "rope_parameters": {
+    "rope_theta": 10000.0,
+    "rope_type": "default"
+  },
+  "tie_word_embeddings": false,
+  "transformers_version": "5.7.0",
+  "use_cache": true,
+  "vocab_size": 32000
+}
+
+Tokenising:   0%|          | 0/4957 [00:00<?, ? examples/s]Tokenising:  20%|██        | 1000/4957 [00:00<00:00, 4405.68 examples/s]Tokenising: 100%|██████████| 4957/4957 [00:00<00:00, 14899.54 examples/s]Tokenising: 100%|██████████| 4957/4957 [00:00<00:00, 12759.68 examples/s]
+Tokenising:   0%|          | 0/500 [00:00<?, ? examples/s]Tokenising: 100%|██████████| 500/500 [00:00<00:00, 19303.15 examples/s]
+Tokenising:   0%|          | 0/500 [00:00<?, ? examples/s]Tokenising: 100%|██████████| 500/500 [00:00<00:00, 16759.79 examples/s]
+  Test split loaded: 500 examples
+[transformers] loading configuration file config.json from cache at /pfss/mlde/workspaces/mlde_wsp_Rohrbach/users/tw65vyka/.cache/huggingface/hub/models--meta-llama--Llama-2-7b-chat-hf/snapshots/f5db02db724555f92da89c216ac04704f23d4590/config.json
+[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
+[transformers] Model config LlamaConfig {
+  "architectures": [
+    "LlamaForCausalLM"
+  ],
+  "attention_bias": false,
+  "attention_dropout": 0.0,
+  "bos_token_id": 1,
+  "dtype": "bfloat16",
+  "eos_token_id": 2,
+  "head_dim": 128,
+  "hidden_act": "silu",
+  "hidden_size": 4096,
+  "initializer_range": 0.02,
+  "intermediate_size": 11008,
+  "max_position_embeddings": 4096,
+  "mlp_bias": false,
+  "model_type": "llama",
+  "num_attention_heads": 32,
+  "num_hidden_layers": 32,
+  "num_key_value_heads": 32,
+  "pad_token_id": null,
+  "pretraining_tp": 1,
+  "rms_norm_eps": 1e-05,
+  "rope_parameters": {
+    "rope_theta": 10000.0,
+    "rope_type": "default"
+  },
+  "tie_word_embeddings": false,
+  "transformers_version": "5.7.0",
+  "use_cache": true,
+  "vocab_size": 32000
+}
+
+[transformers] loading weights file model.safetensors from cache at /pfss/mlde/workspaces/mlde_wsp_Rohrbach/users/tw65vyka/.cache/huggingface/hub/models--meta-llama--Llama-2-7b-chat-hf/snapshots/f5db02db724555f92da89c216ac04704f23d4590/model.safetensors.index.json
+[transformers] Will use dtype=torch.bfloat16 as defined in model's config object
+[transformers] Generate config GenerationConfig {
+  "bos_token_id": 1,
+  "eos_token_id": 2,
+  "output_attentions": false,
+  "output_hidden_states": false,
+  "use_cache": true
+}
+
+Loading weights:   0%|          | 0/291 [00:00<?, ?it/s]Loading weights:   0%|          | 1/291 [00:00<03:16,  1.47it/s]Loading weights:   1%|          | 2/291 [00:00<01:42,  2.83it/s]Loading weights:   5%|▍         | 14/291 [00:00<00:12, 22.82it/s]Loading weights:   7%|▋         | 20/291 [00:01<00:09, 28.57it/s]Loading weights:   9%|▊         | 25/291 [00:01<00:11, 23.51it/s]Loading weights:  11%|█         | 31/291 [00:01<00:15, 17.19it/s]Loading weights:  14%|█▎        | 40/291 [00:02<00:11, 21.29it/s]Loading weights:  16%|█▌        | 47/291 [00:02<00:09, 26.47it/s]Loading weights:  18%|█▊        | 51/291 [00:02<00:10, 22.57it/s]Loading weights:  20%|█▉        | 58/291 [00:02<00:10, 23.30it/s]Loading weights:  22%|██▏       | 64/291 [00:02<00:08, 27.86it/s]Loading weights:  23%|██▎       | 68/291 [00:03<00:09, 22.88it/s]Loading weights:  25%|██▌       | 73/291 [00:03<00:08, 26.43it/s]Loading weights:  26%|██▋       | 77/291 [00:03<00:09, 22.59it/s]Loading weights:  28%|██▊       | 82/291 [00:03<00:08, 25.90it/s]Loading weights:  30%|██▉       | 86/291 [00:04<00:09, 20.70it/s]Loading weights:  32%|███▏      | 92/291 [00:04<00:07, 26.17it/s]Loading weights:  33%|███▎      | 96/291 [00:04<00:09, 21.05it/s]Loading weights:  35%|███▌      | 103/291 [00:04<00:08, 21.74it/s]Loading weights:  38%|███▊      | 110/291 [00:04<00:06, 28.09it/s]Loading weights:  39%|███▉      | 114/291 [00:05<00:07, 22.97it/s]Loading weights:  42%|████▏     | 121/291 [00:05<00:07, 21.93it/s]Loading weights:  45%|████▍     | 130/291 [00:06<00:07, 20.40it/s]Loading weights:  46%|████▌     | 133/291 [00:06<00:07, 20.65it/s]Loading weights:  48%|████▊     | 139/291 [00:06<00:08, 17.52it/s]Loading weights:  50%|████▉     | 145/291 [00:06<00:06, 21.80it/s]Loading weights:  51%|█████     | 148/291 [00:07<00:07, 19.16it/s]Loading weights:  53%|█████▎    | 154/291 [00:07<00:05, 24.56it/s]Loading weights:  54%|█████▍    | 158/291 [00:07<00:06, 22.14it/s]Loading weights:  55%|█████▌    | 161/291 [00:07<00:05, 23.28it/s]Loading weights:  57%|█████▋    | 166/291 [00:07<00:05, 22.52it/s]Loading weights:  58%|█████▊    | 169/291 [00:07<00:05, 23.42it/s]Loading weights:  60%|██████    | 175/291 [00:08<00:05, 20.55it/s]Loading weights:  63%|██████▎   | 182/291 [00:08<00:04, 27.07it/s]Loading weights:  64%|██████▍   | 186/291 [00:08<00:04, 21.02it/s]Loading weights:  66%|██████▋   | 193/291 [00:08<00:04, 22.18it/s]Loading weights:  68%|██████▊   | 199/291 [00:09<00:03, 26.24it/s]Loading weights:  70%|██████▉   | 203/291 [00:09<00:04, 21.23it/s]Loading weights:  73%|███████▎  | 211/291 [00:09<00:03, 21.74it/s]Loading weights:  75%|███████▍  | 218/291 [00:09<00:02, 27.66it/s]Loading weights:  76%|███████▋  | 222/291 [00:10<00:03, 22.89it/s]Loading weights:  79%|███████▊  | 229/291 [00:10<00:02, 22.16it/s]Loading weights:  81%|████████  | 236/291 [00:10<00:02, 27.19it/s]Loading weights:  82%|████████▏ | 240/291 [00:10<00:02, 21.77it/s]Loading weights:  84%|████████▍ | 245/291 [00:11<00:01, 24.79it/s]Loading weights:  86%|████████▌ | 249/291 [00:11<00:02, 19.87it/s]Loading weights:  88%|████████▊ | 256/291 [00:11<00:01, 20.66it/s]Loading weights:  90%|█████████ | 262/291 [00:11<00:01, 25.27it/s]Loading weights:  91%|█████████▏| 266/291 [00:12<00:01, 22.54it/s]Loading weights:  93%|█████████▎| 271/291 [00:12<00:00, 26.42it/s]Loading weights:  95%|█████████▍| 275/291 [00:12<00:00, 19.37it/s]Loading weights:  96%|█████████▌| 278/291 [00:12<00:00, 20.81it/s]Loading weights:  97%|█████████▋| 283/291 [00:12<00:00, 21.90it/s]Loading weights:  98%|█████████▊| 286/291 [00:12<00:00, 23.14it/s]Loading weights: 100%|██████████| 291/291 [00:12<00:00, 22.44it/s]
+[transformers] loading configuration file generation_config.json from cache at /pfss/mlde/workspaces/mlde_wsp_Rohrbach/users/tw65vyka/.cache/huggingface/hub/models--meta-llama--Llama-2-7b-chat-hf/snapshots/f5db02db724555f92da89c216ac04704f23d4590/generation_config.json
+[transformers] Generate config GenerationConfig {
+  "bos_token_id": 1,
+  "do_sample": true,
+  "eos_token_id": 2,
+  "max_length": 4096,
+  "pad_token_id": 0,
+  "temperature": 0.6,
+  "top_p": 0.9
+}
+
+/pfss/mlde/workspaces/mlde_wsp_Rohrbach/users/tw65vyka/laplace-lora/.venv/lib/python3.12/site-packages/peft/tuners/tuners_utils.py:1348: UserWarning: Model has `tie_word_embeddings=True` and a tied layer is part of the adapter, but `ensure_weight_tying` is not set to True. This can lead to complications, for example when merging the adapter or converting your model to formats other than safetensors. Check the discussion here: https://github.com/huggingface/peft/issues/2777
+  warnings.warn(msg)
+  total_steps=0 → steps_per_epoch=2 → n_epochs=0
+--- Loading Laplace posterior from outputs_laplace/openbookqa/meta-llama/Llama-2-7b-chat-hf_lora_lmhead_16_0.1_5e-05_seed2//step_4000 ---
+Prior precision: tensor([389.4234], device='cuda:0')
+  model.base_model.model.model.layers.0.self_attn.q_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=2.566e-03
+  model.base_model.model.model.layers.0.self_attn.q_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=2.567e-03
+  model.base_model.model.model.layers.0.self_attn.v_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=2.566e-03
+  model.base_model.model.model.layers.0.self_attn.v_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=2.424e-03
+  model.base_model.model.model.layers.1.self_attn.q_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=2.566e-03
+  model.base_model.model.model.layers.1.self_attn.q_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=2.566e-03
+  model.base_model.model.model.layers.1.self_attn.v_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=2.562e-03
+  model.base_model.model.model.layers.1.self_attn.v_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=2.343e-03
+  model.base_model.model.model.layers.2.self_attn.q_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=2.566e-03
+  model.base_model.model.model.layers.2.self_attn.q_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=2.557e-03
+  model.base_model.model.model.layers.2.self_attn.v_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=2.503e-03
+  model.base_model.model.model.layers.2.self_attn.v_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=1.737e-03
+  model.base_model.model.model.layers.3.self_attn.q_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=2.564e-03
+  model.base_model.model.model.layers.3.self_attn.q_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=2.544e-03
+  model.base_model.model.model.layers.3.self_attn.v_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=2.431e-03
+  model.base_model.model.model.layers.3.self_attn.v_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=1.560e-03
+  model.base_model.model.model.layers.4.self_attn.q_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=2.565e-03
+  model.base_model.model.model.layers.4.self_attn.q_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=2.547e-03
+  model.base_model.model.model.layers.4.self_attn.v_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=2.484e-03
+  model.base_model.model.model.layers.4.self_attn.v_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=1.814e-03
+  model.base_model.model.model.layers.5.self_attn.q_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=2.564e-03
+  model.base_model.model.model.layers.5.self_attn.q_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=2.543e-03
+  model.base_model.model.model.layers.5.self_attn.v_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=2.492e-03
+  model.base_model.model.model.layers.5.self_attn.v_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=1.826e-03
+  model.base_model.model.model.layers.6.self_attn.q_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=2.564e-03
+  model.base_model.model.model.layers.6.self_attn.q_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=2.541e-03
+  model.base_model.model.model.layers.6.self_attn.v_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=2.500e-03
+  model.base_model.model.model.layers.6.self_attn.v_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=1.742e-03
+  model.base_model.model.model.layers.7.self_attn.q_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=2.562e-03
+  model.base_model.model.model.layers.7.self_attn.q_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=2.534e-03
+  model.base_model.model.model.layers.7.self_attn.v_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=2.531e-03
+  model.base_model.model.model.layers.7.self_attn.v_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=1.903e-03
+  model.base_model.model.model.layers.8.self_attn.q_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=2.544e-03
+  model.base_model.model.model.layers.8.self_attn.q_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=2.531e-03
+  model.base_model.model.model.layers.8.self_attn.v_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=2.534e-03
+  model.base_model.model.model.layers.8.self_attn.v_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=1.978e-03
+  model.base_model.model.model.layers.9.self_attn.q_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=2.559e-03
+  model.base_model.model.model.layers.9.self_attn.q_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=2.499e-03
+  model.base_model.model.model.layers.9.self_attn.v_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=2.513e-03
+  model.base_model.model.model.layers.9.self_attn.v_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=1.978e-03
+  model.base_model.model.model.layers.10.self_attn.q_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=2.546e-03
+  model.base_model.model.model.layers.10.self_attn.q_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=2.514e-03
+  model.base_model.model.model.layers.10.self_attn.v_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=2.534e-03
+  model.base_model.model.model.layers.10.self_attn.v_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=2.164e-03
+  model.base_model.model.model.layers.11.self_attn.q_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=2.517e-03
+  model.base_model.model.model.layers.11.self_attn.q_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=2.530e-03
+  model.base_model.model.model.layers.11.self_attn.v_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=2.509e-03
+  model.base_model.model.model.layers.11.self_attn.v_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=2.230e-03
+  model.base_model.model.model.layers.12.self_attn.q_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=2.556e-03
+  model.base_model.model.model.layers.12.self_attn.q_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=2.513e-03
+  model.base_model.model.model.layers.12.self_attn.v_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=2.542e-03
+  model.base_model.model.model.layers.12.self_attn.v_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=2.280e-03
+  model.base_model.model.model.layers.13.self_attn.q_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=2.560e-03
+  model.base_model.model.model.layers.13.self_attn.q_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=2.533e-03
+  model.base_model.model.model.layers.13.self_attn.v_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=2.529e-03
+  model.base_model.model.model.layers.13.self_attn.v_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=2.376e-03
+  model.base_model.model.model.layers.14.self_attn.q_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=2.565e-03
+  model.base_model.model.model.layers.14.self_attn.q_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=2.531e-03
+  model.base_model.model.model.layers.14.self_attn.v_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=2.560e-03
+  model.base_model.model.model.layers.14.self_attn.v_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=2.440e-03
+  model.base_model.model.model.layers.15.self_attn.q_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=2.566e-03
+  model.base_model.model.model.layers.15.self_attn.q_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=2.543e-03
+  model.base_model.model.model.layers.15.self_attn.v_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=2.555e-03
+  model.base_model.model.model.layers.15.self_attn.v_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=2.522e-03
+  model.base_model.model.model.layers.16.self_attn.q_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=2.567e-03
+  model.base_model.model.model.layers.16.self_attn.q_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=2.560e-03
+  model.base_model.model.model.layers.16.self_attn.v_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=2.560e-03
+  model.base_model.model.model.layers.16.self_attn.v_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=2.527e-03
+  model.base_model.model.model.layers.17.self_attn.q_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=2.566e-03
+  model.base_model.model.model.layers.17.self_attn.q_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=2.559e-03
+  model.base_model.model.model.layers.17.self_attn.v_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=2.560e-03
+  model.base_model.model.model.layers.17.self_attn.v_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=2.541e-03
+  model.base_model.model.model.layers.18.self_attn.q_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=2.567e-03
+  model.base_model.model.model.layers.18.self_attn.q_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=2.558e-03
+  model.base_model.model.model.layers.18.self_attn.v_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=2.564e-03
+  model.base_model.model.model.layers.18.self_attn.v_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=2.557e-03
+  model.base_model.model.model.layers.19.self_attn.q_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=2.567e-03
+  model.base_model.model.model.layers.19.self_attn.q_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=2.564e-03
+  model.base_model.model.model.layers.19.self_attn.v_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=2.565e-03
+  model.base_model.model.model.layers.19.self_attn.v_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=2.562e-03
+  model.base_model.model.model.layers.20.self_attn.q_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=2.567e-03
+  model.base_model.model.model.layers.20.self_attn.q_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=2.566e-03
+  model.base_model.model.model.layers.20.self_attn.v_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=2.564e-03
+  model.base_model.model.model.layers.20.self_attn.v_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=2.560e-03
+  model.base_model.model.model.layers.21.self_attn.q_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=2.567e-03
+  model.base_model.model.model.layers.21.self_attn.q_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=2.566e-03
+  model.base_model.model.model.layers.21.self_attn.v_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=2.565e-03
+  model.base_model.model.model.layers.21.self_attn.v_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=2.564e-03
+  model.base_model.model.model.layers.22.self_attn.q_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=2.567e-03
+  model.base_model.model.model.layers.22.self_attn.q_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=2.567e-03
+  model.base_model.model.model.layers.22.self_attn.v_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=2.566e-03
+  model.base_model.model.model.layers.22.self_attn.v_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=2.564e-03
+  model.base_model.model.model.layers.23.self_attn.q_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=2.567e-03
+  model.base_model.model.model.layers.23.self_attn.q_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=2.567e-03
+  model.base_model.model.model.layers.23.self_attn.v_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=2.565e-03
+  model.base_model.model.model.layers.23.self_attn.v_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=2.565e-03
+  model.base_model.model.model.layers.24.self_attn.q_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=2.567e-03
+  model.base_model.model.model.layers.24.self_attn.q_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=2.567e-03
+  model.base_model.model.model.layers.24.self_attn.v_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=2.564e-03
+  model.base_model.model.model.layers.24.self_attn.v_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=2.565e-03
+  model.base_model.model.model.layers.25.self_attn.q_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=2.567e-03
+  model.base_model.model.model.layers.25.self_attn.q_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=2.567e-03
+  model.base_model.model.model.layers.25.self_attn.v_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=2.564e-03
+  model.base_model.model.model.layers.25.self_attn.v_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=2.564e-03
+  model.base_model.model.model.layers.26.self_attn.q_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=2.567e-03
+  model.base_model.model.model.layers.26.self_attn.q_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=2.567e-03
+  model.base_model.model.model.layers.26.self_attn.v_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=2.565e-03
+  model.base_model.model.model.layers.26.self_attn.v_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=2.565e-03
+  model.base_model.model.model.layers.27.self_attn.q_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=2.567e-03
+  model.base_model.model.model.layers.27.self_attn.q_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=2.567e-03
+  model.base_model.model.model.layers.27.self_attn.v_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=2.565e-03
+  model.base_model.model.model.layers.27.self_attn.v_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=2.565e-03
+  model.base_model.model.model.layers.28.self_attn.q_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=2.567e-03
+  model.base_model.model.model.layers.28.self_attn.q_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=2.567e-03
+  model.base_model.model.model.layers.28.self_attn.v_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=2.564e-03
+  model.base_model.model.model.layers.28.self_attn.v_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=2.565e-03
+  model.base_model.model.model.layers.29.self_attn.q_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=2.567e-03
+  model.base_model.model.model.layers.29.self_attn.q_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=2.567e-03
+  model.base_model.model.model.layers.29.self_attn.v_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=2.565e-03
+  model.base_model.model.model.layers.29.self_attn.v_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=2.566e-03
+  model.base_model.model.model.layers.30.self_attn.q_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=2.567e-03
+  model.base_model.model.model.layers.30.self_attn.q_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=2.567e-03
+  model.base_model.model.model.layers.30.self_attn.v_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=2.565e-03
+  model.base_model.model.model.layers.30.self_attn.v_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=2.566e-03
+  model.base_model.model.model.layers.31.self_attn.q_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=2.567e-03
+  model.base_model.model.model.layers.31.self_attn.q_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=2.567e-03
+  model.base_model.model.model.layers.31.self_attn.v_proj.lora_A.default.weight: torch.Size([8, 4096])  mean=2.564e-03
+  model.base_model.model.model.layers.31.self_attn.v_proj.lora_B.default.weight: torch.Size([4096, 8])  mean=2.566e-03
+  model.base_model.model.lm_head.lora_A.weight: torch.Size([8, 4096])  mean=2.567e-03
+  model.base_model.model.lm_head.lora_B.weight: torch.Size([4, 8])  mean=2.045e-03
+  Extracted Kronecker factors for 130 parameters
+--- Building VPBackbone (rms_norm=streamlined, swiglu=delta, kron=True) ---
+  init_log_T=0.0000 broadcast to all 32 layers
+  init_log_T_logit=0.0000
+  log_s fixed buffer = 0.0000 (not learned)
+
+--- Variant: per_layer_logit (33 params, 0 epochs) ---
+  Best calib NLL: inf
+eval:   0%|          | 0/63 [00:00<?, ?it/s]eval:   2%|▏         | 1/63 [00:00<00:25,  2.42it/s]eval:   3%|▎         | 2/63 [00:00<00:19,  3.18it/s]eval:   5%|▍         | 3/63 [00:00<00:17,  3.53it/s]eval:   6%|▋         | 4/63 [00:01<00:17,  3.47it/s]eval:   8%|▊         | 5/63 [00:01<00:17,  3.23it/s]eval:  10%|▉         | 6/63 [00:01<00:17,  3.27it/s]eval:  11%|█         | 7/63 [00:02<00:16,  3.47it/s]eval:  13%|█▎        | 8/63 [00:02<00:16,  3.43it/s]eval:  14%|█▍        | 9/63 [00:02<00:17,  3.03it/s]eval:  16%|█▌        | 10/63 [00:03<00:17,  3.00it/s]eval:  17%|█▋        | 11/63 [00:03<00:16,  3.11it/s]eval:  19%|█▉        | 12/63 [00:03<00:15,  3.34it/s]eval:  21%|██        | 13/63 [00:03<00:14,  3.34it/s]eval:  22%|██▏       | 14/63 [00:04<00:13,  3.53it/s]eval:  24%|██▍       | 15/63 [00:04<00:14,  3.33it/s]eval:  25%|██▌       | 16/63 [00:04<00:14,  3.34it/s]eval:  27%|██▋       | 17/63 [00:05<00:13,  3.34it/s]eval:  29%|██▊       | 18/63 [00:05<00:12,  3.50it/s]eval:  30%|███       | 19/63 [00:05<00:12,  3.65it/s]eval:  32%|███▏      | 20/63 [00:05<00:11,  3.76it/s]eval:  33%|███▎      | 21/63 [00:06<00:11,  3.63it/s]eval:  35%|███▍      | 22/63 [00:06<00:12,  3.40it/s]eval:  37%|███▋      | 23/63 [00:06<00:11,  3.54it/s]eval:  38%|███▊      | 24/63 [00:07<00:11,  3.48it/s]eval:  40%|███▉      | 25/63 [00:07<00:11,  3.44it/s]eval:  41%|████▏     | 26/63 [00:07<00:10,  3.60it/s]eval:  43%|████▎     | 27/63 [00:07<00:09,  3.72it/s]eval:  44%|████▍     | 28/63 [00:08<00:09,  3.60it/s]eval:  46%|████▌     | 29/63 [00:08<00:09,  3.52it/s]eval:  48%|████▊     | 30/63 [00:08<00:09,  3.66it/s]eval:  49%|████▉     | 31/63 [00:09<00:08,  3.56it/s]eval:  51%|█████     | 32/63 [00:09<00:08,  3.50it/s]eval:  52%|█████▏    | 33/63 [00:09<00:08,  3.45it/s]eval:  54%|█████▍    | 34/63 [00:09<00:07,  3.68it/s]eval:  56%|█████▌    | 35/63 [00:10<00:07,  3.78it/s]eval:  57%|█████▋    | 36/63 [00:10<00:07,  3.82it/s]eval:  59%|█████▊    | 37/63 [00:10<00:06,  3.85it/s]eval:  60%|██████    | 38/63 [00:10<00:06,  3.69it/s]eval:  62%|██████▏   | 39/63 [00:11<00:07,  3.39it/s]eval:  63%|██████▎   | 40/63 [00:11<00:06,  3.53it/s]eval:  65%|██████▌   | 41/63 [00:11<00:06,  3.48it/s]eval:  67%|██████▋   | 42/63 [00:12<00:06,  3.44it/s]eval:  68%|██████▊   | 43/63 [00:12<00:05,  3.57it/s]eval:  70%|██████▉   | 44/63 [00:12<00:05,  3.69it/s]eval:  71%|███████▏  | 45/63 [00:12<00:04,  3.75it/s]eval:  73%|███████▎  | 46/63 [00:13<00:04,  3.61it/s]eval:  75%|███████▍  | 47/63 [00:13<00:04,  3.53it/s]eval:  76%|███████▌  | 48/63 [00:13<00:04,  3.64it/s]eval:  78%|███████▊  | 49/63 [00:14<00:03,  3.54it/s]eval:  79%|███████▉  | 50/63 [00:14<00:03,  3.64it/s]eval:  81%|████████  | 51/63 [00:14<00:03,  3.39it/s]eval:  83%|████████▎ | 52/63 [00:14<00:03,  3.53it/s]eval:  84%|████████▍ | 53/63 [00:15<00:02,  3.64it/s]eval:  86%|████████▌ | 54/63 [00:15<00:02,  3.75it/s]eval:  87%|████████▋ | 55/63 [00:15<00:02,  3.79it/s]eval:  89%|████████▉ | 56/63 [00:15<00:01,  3.64it/s]eval:  90%|█████████ | 57/63 [00:16<00:01,  3.72it/s]eval:  92%|█████████▏| 58/63 [00:16<00:01,  3.78it/s]eval:  94%|█████████▎| 59/63 [00:16<00:01,  3.63it/s]eval:  95%|█████████▌| 60/63 [00:17<00:00,  3.54it/s]eval:  97%|█████████▋| 61/63 [00:17<00:00,  3.47it/s]eval:  98%|█████████▊| 62/63 [00:17<00:00,  3.62it/s]eval: 100%|██████████| 63/63 [00:17<00:00,  4.23it/s]                                                     eval:   0%|          | 0/63 [00:00<?, ?it/s]eval:   2%|▏         | 1/63 [00:00<00:18,  3.34it/s]eval:   3%|▎         | 2/63 [00:00<00:16,  3.71it/s]eval:   5%|▍         | 3/63 [00:00<00:15,  3.79it/s]eval:   6%|▋         | 4/63 [00:01<00:16,  3.60it/s]eval:   8%|▊         | 5/63 [00:01<00:16,  3.50it/s]eval:  10%|▉         | 6/63 [00:01<00:16,  3.44it/s]eval:  11%|█         | 7/63 [00:01<00:15,  3.58it/s]eval:  13%|█▎        | 8/63 [00:02<00:15,  3.50it/s]eval:  14%|█▍        | 9/63 [00:02<00:15,  3.45it/s]eval:  16%|█▌        | 10/63 [00:02<00:14,  3.58it/s]eval:  17%|█▋        | 11/63 [00:03<00:14,  3.50it/s]eval:  19%|█▉        | 12/63 [00:03<00:14,  3.45it/s]eval:  21%|██        | 13/63 [00:03<00:14,  3.42it/s]eval:  22%|██▏       | 14/63 [00:03<00:13,  3.58it/s]eval:  24%|██▍       | 15/63 [00:04<00:13,  3.67it/s]eval:  25%|██▌       | 16/63 [00:04<00:12,  3.77it/s]eval:  27%|██▋       | 17/63 [00:04<00:14,  3.21it/s]eval:  29%|██▊       | 18/63 [00:05<00:13,  3.42it/s]eval:  30%|███       | 19/63 [00:05<00:12,  3.55it/s]eval:  32%|███▏      | 20/63 [00:05<00:11,  3.76it/s]eval:  33%|███▎      | 21/63 [00:05<00:11,  3.81it/s]eval:  35%|███▍      | 22/63 [00:06<00:10,  3.84it/s]eval:  37%|███▋      | 23/63 [00:06<00:10,  3.67it/s]eval:  38%|███▊      | 24/63 [00:06<00:10,  3.56it/s]eval:  40%|███▉      | 25/63 [00:07<00:10,  3.49it/s]eval:  41%|████▏     | 26/63 [00:07<00:10,  3.61it/s]eval:  43%|████▎     | 27/63 [00:07<00:10,  3.37it/s]eval:  44%|████▍     | 28/63 [00:07<00:10,  3.36it/s]eval:  46%|████▌     | 29/63 [00:08<00:09,  3.51it/s]eval:  48%|████▊     | 30/63 [00:08<00:09,  3.31it/s]eval:  49%|████▉     | 31/63 [00:08<00:09,  3.31it/s]eval:  51%|█████     | 32/63 [00:09<00:09,  3.16it/s]eval:  52%|█████▏    | 33/63 [00:09<00:09,  3.21it/s]eval:  54%|█████▍    | 34/63 [00:09<00:08,  3.39it/s]eval:  56%|█████▌    | 35/63 [00:10<00:08,  3.23it/s]eval:  57%|█████▋    | 36/63 [00:10<00:08,  3.13it/s]eval:  59%|█████▊    | 37/63 [00:10<00:08,  3.19it/s]eval:  60%|██████    | 38/63 [00:10<00:07,  3.40it/s]eval:  62%|██████▏   | 39/63 [00:11<00:07,  3.24it/s]eval:  63%|██████▎   | 40/63 [00:11<00:06,  3.44it/s]eval:  65%|██████▌   | 41/63 [00:11<00:06,  3.41it/s]eval:  67%|██████▋   | 42/63 [00:12<00:06,  3.39it/s]eval:  68%|██████▊   | 43/63 [00:12<00:05,  3.37it/s]eval:  70%|██████▉   | 44/63 [00:12<00:05,  3.36it/s]eval:  71%|███████▏  | 45/63 [00:13<00:05,  3.54it/s]eval:  73%|███████▎  | 46/63 [00:13<00:04,  3.63it/s]eval:  75%|███████▍  | 47/63 [00:13<00:04,  3.71it/s]eval:  76%|███████▌  | 48/63 [00:13<00:03,  3.80it/s]eval:  78%|███████▊  | 49/63 [00:14<00:03,  3.65it/s]eval:  79%|███████▉  | 50/63 [00:14<00:03,  3.75it/s]eval:  81%|████████  | 51/63 [00:14<00:03,  3.79it/s]eval:  83%|████████▎ | 52/63 [00:14<00:02,  3.82it/s]eval:  84%|████████▍ | 53/63 [00:15<00:02,  3.66it/s]eval:  86%|████████▌ | 54/63 [00:15<00:02,  3.77it/s]eval:  87%|████████▋ | 55/63 [00:15<00:02,  3.44it/s]eval:  89%|████████▉ | 56/63 [00:15<00:01,  3.57it/s]eval:  90%|█████████ | 57/63 [00:16<00:01,  3.66it/s]eval:  92%|█████████▏| 58/63 [00:16<00:01,  3.56it/s]eval:  94%|█████████▎| 59/63 [00:16<00:01,  3.69it/s]eval:  95%|█████████▌| 60/63 [00:17<00:00,  3.79it/s]eval:  97%|█████████▋| 61/63 [00:17<00:00,  3.82it/s]eval:  98%|█████████▊| 62/63 [00:17<00:00,  3.88it/s]eval: 100%|██████████| 63/63 [00:17<00:00,  4.31it/s]                                                       Val:  {'accuracy': 0.7760000228881836, 'nll': 0.7421241998672485}
+  Eval: {'accuracy': 0.7739999890327454, 'nll': 0.7419120073318481, 'loss': 0.7419120669364929, 'brier': 0.34377947449684143, 'ece': 11.733369827270508, 'ace': 10.928730964660645, 'auc': 8.717272758483887, 'C@0.001': 6.599999904632568, 'C@0.005': 6.599999904632568, 'C@0.01': 6.599999904632568, 'C@0.02': 6.599999904632568, 'C@0.05': 48.400001525878906, 'C@0.1': 64.4000015258789, 'C@0.2': 94.5999984741211, 'C@0.3': 100.0}
+eval:   0%|          | 0/63 [00:00<?, ?it/s]eval:   2%|▏         | 1/63 [00:00<00:18,  3.33it/s]eval:   3%|▎         | 2/63 [00:00<00:16,  3.65it/s]eval:   5%|▍         | 3/63 [00:00<00:17,  3.50it/s]eval:   6%|▋         | 4/63 [00:01<00:16,  3.65it/s]eval:   8%|▊         | 5/63 [00:01<00:16,  3.53it/s]eval:  10%|▉         | 6/63 [00:01<00:16,  3.46it/s]eval:  11%|█         | 7/63 [00:01<00:15,  3.63it/s]eval:  13%|█▎        | 8/63 [00:02<00:17,  3.21it/s]eval:  14%|█▍        | 9/63 [00:02<00:15,  3.40it/s]eval:  16%|█▌        | 10/63 [00:02<00:14,  3.57it/s]eval:  17%|█▋        | 11/63 [00:03<00:14,  3.70it/s]eval:  19%|█▉        | 12/63 [00:03<00:13,  3.79it/s]eval:  21%|██        | 13/63 [00:03<00:13,  3.64it/s]eval:  22%|██▏       | 14/63 [00:03<00:14,  3.39it/s]eval:  24%|██▍       | 15/63 [00:04<00:14,  3.37it/s]eval:  25%|██▌       | 16/63 [00:04<00:13,  3.55it/s]eval:  27%|██▋       | 17/63 [00:04<00:13,  3.33it/s]eval:  29%|██▊       | 18/63 [00:05<00:12,  3.51it/s]eval:  30%|███       | 19/63 [00:05<00:12,  3.63it/s]eval:  32%|███▏      | 20/63 [00:05<00:11,  3.71it/s]eval:  33%|███▎      | 21/63 [00:05<00:11,  3.76it/s]eval:  35%|███▍      | 22/63 [00:06<00:12,  3.39it/s]eval:  37%|███▋      | 23/63 [00:06<00:11,  3.56it/s]eval:  38%|███▊      | 24/63 [00:06<00:10,  3.66it/s]eval:  40%|███▉      | 25/63 [00:07<00:10,  3.73it/s]eval:  41%|████▏     | 26/63 [00:07<00:10,  3.45it/s]eval:  43%|████▎     | 27/63 [00:07<00:09,  3.60it/s]eval:  44%|████▍     | 28/63 [00:07<00:09,  3.69it/s]eval:  46%|████▌     | 29/63 [00:08<00:09,  3.75it/s]eval:  48%|████▊     | 30/63 [00:08<00:09,  3.62it/s]eval:  49%|████▉     | 31/63 [00:08<00:08,  3.73it/s]eval:  51%|█████     | 32/63 [00:08<00:08,  3.82it/s]eval:  52%|█████▏    | 33/63 [00:09<00:07,  3.87it/s]eval:  54%|█████▍    | 34/63 [00:09<00:07,  3.92it/s]eval:  56%|█████▌    | 35/63 [00:09<00:07,  3.72it/s]eval:  57%|█████▋    | 36/63 [00:10<00:07,  3.60it/s]eval:  59%|█████▊    | 37/63 [00:10<00:07,  3.68it/s]eval:  60%|██████    | 38/63 [00:10<00:06,  3.78it/s]eval:  62%|██████▏   | 39/63 [00:10<00:06,  3.85it/s]eval:  63%|██████▎   | 40/63 [00:11<00:05,  3.90it/s]eval:  65%|██████▌   | 41/63 [00:11<00:05,  3.93it/s]eval:  67%|██████▋   | 42/63 [00:11<00:05,  3.93it/s]eval:  68%|██████▊   | 43/63 [00:11<00:05,  3.73it/s]eval:  70%|██████▉   | 44/63 [00:12<00:04,  3.90it/s]eval:  71%|███████▏  | 45/63 [00:12<00:04,  3.90it/s]eval:  73%|███████▎  | 46/63 [00:12<00:04,  3.71it/s]eval:  75%|███████▍  | 47/63 [00:12<00:04,  3.77it/s]eval:  76%|███████▌  | 48/63 [00:13<00:04,  3.63it/s]eval:  78%|███████▊  | 49/63 [00:13<00:03,  3.72it/s]eval:  79%|███████▉  | 50/63 [00:13<00:03,  3.77it/s]eval:  81%|████████  | 51/63 [00:13<00:03,  3.81it/s]eval:  83%|████████▎ | 52/63 [00:14<00:02,  3.88it/s]eval:  84%|████████▍ | 53/63 [00:14<00:02,  3.70it/s]eval:  86%|████████▌ | 54/63 [00:14<00:02,  3.43it/s]eval:  87%|████████▋ | 55/63 [00:15<00:02,  3.59it/s]eval:  89%|████████▉ | 56/63 [00:15<00:01,  3.51it/s]eval:  90%|█████████ | 57/63 [00:15<00:01,  3.45it/s]eval:  92%|█████████▏| 58/63 [00:15<00:01,  3.42it/s]eval:  94%|█████████▎| 59/63 [00:16<00:01,  3.55it/s]eval:  95%|█████████▌| 60/63 [00:16<00:00,  3.49it/s]eval:  97%|█████████▋| 61/63 [00:16<00:00,  3.30it/s]eval:  98%|█████████▊| 62/63 [00:17<00:00,  3.06it/s]eval: 100%|██████████| 63/63 [00:17<00:00,  3.57it/s]                                                       Test: {'accuracy': 0.7860000133514404, 'nll': 0.6294681429862976, 'loss': 0.6294681429862976, 'brier': 0.30926844477653503, 'ece': 8.916141510009766, 'ace': 8.690144538879395, 'auc': 6.809495449066162, 'C@0.001': 3.4000000953674316, 'C@0.005': 3.4000000953674316, 'C@0.01': 3.4000000953674316, 'C@0.02': 34.20000076293945, 'C@0.05': 56.80000305175781, 'C@0.1': 70.20000457763672, 'C@0.2': 98.0, 'C@0.3': 100.0}
+  Saved calibration params → outputs_laplace/openbookqa/meta-llama/Llama-2-7b-chat-hf_lora_lmhead_16_0.1_5e-05_seed2/step_4000/calib_params_per_layer_logit.pt
+
+All results saved to ./outputs/openbookqa/meta-llama/Llama-2-7b-chat-hf_lora_lmhead_16_0.1_5e-05_seed2/step_4000/all_results_vp_kron_all_homo_100_rmsstreamlined_swigludelta_epochs0.json
+Results saved → ./results/openbookqa/seed2/delta_streamlined.json
+[rank0]:[W505 18:36:04.696548484 ProcessGroupNCCL.cpp:1496] Warning: WARNING: destroy_process_group() was not called before program exit, which can leak resources. For more info, please see https://pytorch.org/docs/stable/distributed.html#shutdown (function operator())

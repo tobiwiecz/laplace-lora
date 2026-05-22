@@ -133,13 +133,17 @@ def _npdf(x: torch.Tensor) -> torch.Tensor:
     return torch.exp(-0.5 * x * x) * _INV_SQRT2PI
 
 
-def _gelu_moments(m: torch.Tensor, v: torch.Tensor, k: int):
-    """(E[GELU(y)], Var[GELU(y)]) for y ~ N(m, v), Hermite order k."""
+def _gelu_moments(m: torch.Tensor, v: torch.Tensor, k: int, eps: float = 0.0):
+    """(E[GELU(y)], Var[GELU(y)]) for y ~ N(m, v), Hermite order k.
+
+    eps: floor added to v before sqrt to prevent infinite gradient at v=0.
+         calibrate_vp.py uses eps=1e-6; eps=0 uses clamp(min=0) (original).
+    """
     zeta  = torch.rsqrt(1.0 + v)
     m_out = m * torch.special.ndtr(m * zeta) + v * zeta * _npdf(m * zeta)
     if k <= 0:
         return m_out, torch.zeros_like(m_out)
-    sigma = v.clamp(min=0.0).sqrt()
+    sigma = (v + eps).sqrt() if eps > 0 else v.clamp(min=0.0).sqrt()
     gamma = m * zeta                   # μ / √(1+σ²)
     alpha = sigma * zeta               # σ / √(1+σ²)
     phig  = _npdf(gamma)
@@ -154,15 +158,16 @@ def _gelu_moments(m: torch.Tensor, v: torch.Tensor, k: int):
     return m_out, v_out
 
 
-def swiglu_hermite(mu_g, var_g, mu_u, var_u, cov_gu, k: int):
+def swiglu_hermite(mu_g, var_g, mu_u, var_u, cov_gu, k: int, eps: float = 0.0):
     """SwiGLU VP: SiLU moments via GELU Hermite (order k) + exact product var.
 
     SiLU(gate) ≈ GELU(_C·gate) / _C, so:
       E[SiLU(gate)]   ≈ E_GELU(_C·μ_g, _C²·var_g) / _C
       Var[SiLU(gate)] ≈ Var_GELU(_C·μ_g, _C²·var_g) / _C²
     Mean correction uses first-order Stein: Cov[SiLU(gate), up] ≈ f'(μ_g)·cov_gu.
+    eps: passed through to _gelu_moments sqrt floor.
     """
-    gm, gv = _gelu_moments(_C * mu_g, _C**2 * var_g, k)
+    gm, gv = _gelu_moments(_C * mu_g, _C**2 * var_g, k, eps=eps)
     silu_m = gm / _C        # E[SiLU(gate)]
     silu_v = gv / _C**2     # Var[SiLU(gate)], higher-order approx
     df     = silu_deriv(mu_g)
@@ -340,3 +345,60 @@ for k in HERMITE_ORDERS:
     save_heatmap(improvement_hk.numpy(),
                  f"Std-error improvement: delta → Hermite k={k}\n(positive = Hermite helps)",
                  f"{PLOT_DIR}/improvement_hermite_k{k}_std.png", symmetric=True)
+
+
+# ── Epsilon test: eps=0 vs eps=1e-6 ──────────────────────────────────────────
+print("\n" + "="*70)
+print("EPSILON TEST: sqrt floor eps=0 vs eps=1e-6 in _gelu_moments")
+print("="*70)
+
+EPS_TEST = 1e-6
+K_TEST   = 3  # order used in calibrate_vp.py
+
+# 1. Gradient test at v=0 exactly
+print("\n[1] Gradient through _gelu_moments at v=0 (var_g=0, as at layer-0 start)")
+for eps_val, label in [(0.0, "eps=0  (clamp)"), (EPS_TEST, "eps=1e-6")]:
+    v = torch.tensor([0.0], requires_grad=True)
+    m = torch.tensor([1.0])
+    _, v_out = _gelu_moments(m, v, K_TEST, eps=eps_val)
+    loss = v_out.sum()
+    loss.backward()
+    g = v.grad
+    print(f"  {label}: grad={g.item():.4e}  (nan={torch.isnan(g).any().item()}  "
+          f"inf={torch.isinf(g).any().item()})")
+
+# 2. Accuracy comparison over the same (mean, std) grid
+print(f"\n[2] Accuracy of Hermite k={K_TEST}: eps=0 vs eps={EPS_TEST}")
+err_eps0_std  = torch.zeros(STEPS_MEAN, STEPS_STD)
+err_eps1_std  = torch.zeros(STEPS_MEAN, STEPS_STD)
+
+for j, sig in enumerate(std_values):
+    var_x = sig.item() ** 2
+    x     = torch.randn(STEPS_MEAN, N_SAMPLES, D_IN) * sig + mu_col
+    gate_s = x @ W_gate.T
+    up_s   = x @ W_up.T
+    y_s    = F.silu(gate_s) * up_s
+    mc_std = y_s.std(1)
+
+    mu_x = mean_values.view(STEPS_MEAN, 1)
+    mu_g  = mu_x * W_gate_mean_fac
+    mu_u  = mu_x * W_up_mean_fac
+    var_g = var_x * W_gate_var_fac
+    var_u = var_x * W_up_var_fac
+    cov   = var_x * W_cov_fac
+
+    _, hv0 = swiglu_hermite(mu_g, var_g, mu_u, var_u, cov, K_TEST, eps=0.0)
+    _, hv1 = swiglu_hermite(mu_g, var_g, mu_u, var_u, cov, K_TEST, eps=EPS_TEST)
+    err_eps0_std[:, j] = (hv0.clamp(min=0).sqrt() - mc_std).abs().mean(dim=1)
+    err_eps1_std[:, j] = (hv1.clamp(min=0).sqrt() - mc_std).abs().mean(dim=1)
+
+print(f"  eps=0    mean std-err = {err_eps0_std.mean():.6f}")
+print(f"  eps=1e-6 mean std-err = {err_eps1_std.mean():.6f}")
+print(f"  max |diff| in std-err = {(err_eps1_std - err_eps0_std).abs().max():.2e}")
+
+diff_map = (err_eps1_std - err_eps0_std)
+save_heatmap(diff_map.numpy(),
+             f"Std-error change: eps=0 → eps=1e-6 (Hermite k={K_TEST})\n"
+             "(positive = eps hurts, negative = eps helps)",
+             f"{PLOT_DIR}/epsilon_effect_std.png", symmetric=True)
+print(f"\nEpsilon test complete.")

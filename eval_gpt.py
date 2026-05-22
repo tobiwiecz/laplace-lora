@@ -22,6 +22,7 @@ from transformers import (
     default_data_collator,
 )
 from peft import PeftModel
+from metrics import compute_all_metrics
 
 logger = get_logger(__name__)
 
@@ -48,6 +49,10 @@ def parse_args():
         "--output_dir", type=str, default=None,
         help="Where to write results. Defaults to checkpoint_dir.",
     )
+    parser.add_argument("--seed_label", type=str, default=None,
+        help="Human-readable seed label (e.g. seed1) for results/ path.")
+    parser.add_argument("--results_dir", type=str, default=None,
+        help="If set, also writes results/{task}/{seed_label}/mean.json here.")
     return parser.parse_args()
 
 
@@ -272,23 +277,27 @@ def main():
         logger.info(f"{split_name}: {eval_metric}")
 
         if accelerator.is_main_process:
-            all_results = {f"eval_{k}": v for k, v in eval_metric.items()}
+            all_logits_cat = torch.cat(all_logits, dim=0)
+            all_labels_cat = torch.cat(all_labels, dim=0)
+            all_probs_cat = torch.softmax(all_logits_cat, dim=-1)
+
+            all_results = {k.removeprefix("eval_"): v for k, v in eval_metric.items()}
+            all_results.update(compute_all_metrics(all_probs_cat, all_labels_cat))
+
             all_results_path = os.path.join(args.output_dir, f"all_results_{split_name}.json")
             if os.path.isfile(all_results_path):
                 os.remove(all_results_path)
             with open(all_results_path, "w") as f:
                 json.dump(all_results, f)
 
-            all_logits_cat = torch.cat(all_logits, dim=0)
-            all_labels_cat = torch.cat(all_labels, dim=0)
             output_dicts = [
                 {
                     'index': j,
                     'true': all_labels_cat[j].item(),
                     'pred': all_logits_cat[j].argmax().item(),
-                    'conf': all_logits_cat[j].max().item(),
+                    'conf': all_probs_cat[j].max().item(),
                     'logits': all_logits_cat[j].numpy().tolist(),
-                    'probs': all_logits_cat[j].numpy().tolist(),
+                    'probs': all_probs_cat[j].numpy().tolist(),
                 }
                 for j in range(all_logits_cat.size(0))
             ]
@@ -299,6 +308,15 @@ def main():
             with open(output_path, 'w+') as f:
                 for output_dict in output_dicts:
                     f.write(f'{json.dumps(output_dict)}\n')
+
+            if args.results_dir and args.seed_label:
+                suffix = "" if split_name == "val" else f"_{split_name}"
+                clean_dir = os.path.join(args.results_dir, args.task_name, args.seed_label)
+                os.makedirs(clean_dir, exist_ok=True)
+                clean_path = os.path.join(clean_dir, f"mean{suffix}.json")
+                with open(clean_path, "w") as f:
+                    json.dump({k.removeprefix("eval_"): v for k, v in all_results.items()}, f, indent=2)
+                print(f"Results saved → {clean_path}")
 
 
 if __name__ == "__main__":

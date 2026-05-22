@@ -5,9 +5,14 @@ export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 #tasks=(winogrande_s ARC-Challenge ARC-Easy winogrande_m openbookqa boolq)
 #seeds=(21 42 87 13 100)
 
-tasks=(${TASKS:-winogrande_s})
+tasks=(${TASKS:-ARC-Easy openbookqa})
 seeds=(${SEEDS:-21 42 87 13 100})
 load_steps=(${LOAD_STEPS:-4000})
+
+# Optional flags — set to 1 to enable
+load_laplace=${LOAD_LAPLACE:-0}      # 1 → load saved H + prior_precision from disk instead of refitting
+skip_val_eval=${SKIP_VAL_EVAL:-0}   # 1 → skip val inference loop (f_mu/f_var already computed)
+also_eval_test=${ALSO_EVAL_TEST:-0} # 1 → run GLM inference on HF test split and save tensors
 
 declare -A seed_to_label=([21]=seed1 [42]=seed2 [87]=seed3 [13]=seed4 [100]=seed5)
 
@@ -22,7 +27,7 @@ for task in "${tasks[@]}"; do
     for seed in "${seeds[@]}"; do
         seed_label="${seed_to_label[$seed]}"
         for laplace_sub in all; do
-            for laplace_hessian in diag; do
+            for laplace_hessian in diag kron; do
                 for laplace_prior in homo; do
                     for laplace_optim_step in 100; do
                         for load_step in "${load_steps[@]}"; do
@@ -54,6 +59,9 @@ for task in "${tasks[@]}"; do
                             --max_length $max_len \
                             --testing_set val \
                             --lm_head \
+                            $( [ "$load_laplace"   = "1" ] && echo "--load_laplace" ) \
+                            $( [ "$skip_val_eval"  = "1" ] && echo "--skip_val_eval" ) \
+                            $( [ "$also_eval_test" = "1" ] && echo "--also_eval_test" ) \
                             2>&1 | tee "$log_file"
                         done
                     done
